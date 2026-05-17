@@ -1,11 +1,6 @@
 ### Deep Trading Agent
 
 
-
-
-
-~
-
 > Multi-agent AI trading system powered by **LangChain**, **Zerodha Kite**, and **Tavily Search**. Built around a single reusable `LLMService` and orchestrated through a Gradio dashboard.
 
 ---
@@ -112,6 +107,7 @@ python dashboard.py
 
 
 ## Project Structure
+```
 Trading_Agent/
 ├── __init__.py            # package metadata, lazy imports
 ├── llm_service.py         # base LLM wrapper (single source of truth)
@@ -128,6 +124,7 @@ Trading_Agent/
     ├── strategies/        # saved backtest results
     ├── visualizations/    # HTML Plotly charts
     └── trade_logs/        # daily trade JSON logs
+```
 
 
 ## ⚠️ Disclaimer
