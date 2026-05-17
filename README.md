@@ -102,7 +102,7 @@ for Tavily Keys https://tavily.com/
 Launch the Dashboard
 
 `cd Trading_Agent`
-`python dashboard.py`
+`python -m dashboard.py`
 
 
 ## Project Structure
@@ -115,7 +115,7 @@ Trading_Agent/
 ├── tools.py               # @tool functions (Kite, indicators, charts, search)
 ├── sub_agents.py          # specialized agents (market, analysis, strategy …)
 ├── main_agent.py          # OrchestratorAgent — routes to sub-agents
-├── deep_agent.py          # ARIA — alternative single-agent variant
+├── deep_agent.py          # ARIA — alternative single-agent variant (main-for now)
 ├── dashboard.py           # Gradio UI (entry point)
 ├── requirements.txt       # pip dependencies
 ├── README.md              # this file
