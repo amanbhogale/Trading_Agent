@@ -20,7 +20,7 @@
 - [Strategies & Backtesting](#-strategies--backtesting)
 - [Troubleshooting](#-troubleshooting)
 - [Roadmap](#-roadmap)
-- [Disclaimer](#disclaimer)
+- [Disclaimer](#-disclaimer)
 
 ---
 
