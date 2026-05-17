@@ -106,6 +106,7 @@ Launch the Dashboard
 
 
 ## Project Structure
+
 ```
 Trading_Agent/
 ├── __init__.py            # package metadata, lazy imports
@@ -127,6 +128,7 @@ Trading_Agent/
 
 
 ## ⚠️ Disclaimer
+
 `This software is for educational purposes only.
 Trading in financial markets involves substantial risk of loss.
 The authors are not responsible for any financial losses incurred from using this system.
