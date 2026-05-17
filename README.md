@@ -82,8 +82,8 @@ python -m venv {eniroment_name}
 
 step-2 Install Dependencies
 
-pip install --upgrade pip
-pip install -r requirements.txt
+`pip install --upgrade pip`
+`pip install -r requirements.txt`
 
 step-4 verify installation
 
@@ -102,8 +102,8 @@ for Tavily Keys https://tavily.com/
 
 Launch the Dashboard
 
-cd Trading_Agent
-python dashboard.py
+`cd Trading_Agent`
+`python dashboard.py`
 
 
 ## Project Structure
