@@ -9,12 +9,12 @@
 
 - [Features](#-features)
 - [Architecture](#-architecture)
-- [Installation](#-installation)
+- [Installation](#installation)
 - [Configuration](#-configuration)
 - [Getting Started](#-getting-started)
 - [Dashboard Walkthrough](#-dashboard-walkthrough)
 - [Project Structure](#-project-structure)
-- [How It Works](#-how-it-works)
+- [How It Works](#how-it-works)
 - [Using as a Library](#-using-as-a-library)
 - [Persistent Memory](#-persistent-memory)
 - [Strategies & Backtesting](#-strategies--backtesting)
@@ -74,7 +74,7 @@
                   │   (LLMConfig + Service) │
                   └─────────────────────────┘
 ```
-## -Installation
+## Installation
 
 step-1 create virtual enviroment
 
