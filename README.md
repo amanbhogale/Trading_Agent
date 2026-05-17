@@ -78,3 +78,63 @@
                   │   llm_service.py        │  ← Single shared LLM
                   │   (LLMConfig + Service) │
                   └─────────────────────────┘
+```
+## Installation
+
+step-1 create virtual enviroment
+
+python -m venv {eniroment_name}
+
+step-2 Install Dependencies
+
+pip install --upgrade pip
+pip install -r requirements.txt
+
+step-4 verify installation
+
+python -c "from llm_service import LLMService;  print('llm_service ✅')"
+python -c "import tools;                         print('tools ✅')"
+python -c "from sub_agents import MarketDataAgent; print('sub_agents ✅')"
+python -c "from main_agent import build_orchestrator; print('main_agent ✅')"
+
+
+for openrouter keys https://openrouter.ai/keys
+
+for Tavily Keys https://tavily.com/
+
+
+## Running the System 
+
+Launch the Dashboard
+
+cd Trading_Agent
+python dashboard.py
+
+
+## Project Structure
+Trading_Agent/
+├── __init__.py            # package metadata, lazy imports
+├── llm_service.py         # base LLM wrapper (single source of truth)
+├── memory.py              # file-system persistent memory
+├── tools.py               # @tool functions (Kite, indicators, charts, search)
+├── sub_agents.py          # specialized agents (market, analysis, strategy …)
+├── main_agent.py          # OrchestratorAgent — routes to sub-agents
+├── deep_agent.py          # ARIA — alternative single-agent variant
+├── dashboard.py           # Gradio UI (entry point)
+├── requirements.txt       # pip dependencies
+├── README.md              # this file
+└── data/                  # auto-created on first run
+    ├── memory/            # JSON conversation & context
+    ├── strategies/        # saved backtest results
+    ├── visualizations/    # HTML Plotly charts
+    └── trade_logs/        # daily trade JSON logs
+
+
+## ⚠️ Disclaimer
+`This software is for educational purposes only.
+Trading in financial markets involves substantial risk of loss.
+The authors are not responsible for any financial losses incurred from using this system.
+Always paper-trade strategies before going live and consult a SEBI-registered investment advisor.`
+
+
+
