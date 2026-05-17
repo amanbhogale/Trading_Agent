@@ -13,15 +13,14 @@
 - [Configuration](#-configuration)
 - [Getting Started](#-getting-started)
 - [Dashboard Walkthrough](#-dashboard-walkthrough)
-- [Project Structure](#-project-structure)
+- [Project Structure](#project-structure)
 - [How It Works](#how-it-works)
 - [Using as a Library](#-using-as-a-library)
 - [Persistent Memory](#-persistent-memory)
 - [Strategies & Backtesting](#-strategies--backtesting)
 - [Troubleshooting](#-troubleshooting)
 - [Roadmap](#-roadmap)
-- [License](#-license)
-- [Disclaimer](#-disclaimer)
+- [Disclaimer](#disclaimer)
 
 ---
 
