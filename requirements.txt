@@ -1,0 +1,13 @@
+langchain
+langchain-core
+langchain-openai
+langchain-anthropic
+langchain-google-genai
+kiteconnect
+gradio
+pandas
+numpy
+plotly
+tavily-python
+python-dotenv
+click

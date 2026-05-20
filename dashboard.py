@@ -292,7 +292,7 @@ def build_dashboard() -> gr.Blocks:
                     )
                     model_in = gr.Textbox(
                         label = "Model",
-                        value = os.getenv("LLM_MODEL", "google/gemini-2.5-flash"),
+                        value = os.getenv("LLM_MODEL", "nvidia/nemotron-3-super-120b-a12b:free"),
                     )
                     api_key_in = gr.Textbox(
                         label = "API Key",
