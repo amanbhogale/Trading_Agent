@@ -1,17 +1,21 @@
 # dashboard.py
 import os
+import sys
 import json
 import logging
 from pathlib import Path
 from typing import Optional
 
+# Bootstrapper to resolve src/ directory automatically
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
 import gradio as gr
 from dotenv import load_dotenv
 
-from llm_service import LLMService, LLMConfig
-from main_agent import build_orchestrator, OrchestratorAgent
-from memory import MemoryManager
-import tools as T
+from trading_system.llm_service import LLMService, LLMConfig
+from trading_system.main_agent import build_orchestrator, OrchestratorAgent
+from trading_system.memory import MemoryManager
+import trading_system.tools as T
 
 load_dotenv()
 logging.basicConfig(
@@ -106,47 +110,67 @@ def connect(
     """
     global _orchestrator
     try:
+        # Safe string inputs parsing
+        api_key_clean    = str(api_key or "").strip()
+        model_clean      = str(model or "").strip()
+        base_url_clean   = str(base_url or "").strip()
+        kite_key_clean   = str(kite_api_key or "").strip()
+        kite_token_clean = str(kite_access_token or "").strip()
+
+        # Safe float/int parsing
+        try:
+            temp_val = float(temperature) if temperature is not None and str(temperature).strip() != "" else 0.0
+        except ValueError:
+            temp_val = 0.0
+
+        try:
+            tokens_val = int(max_tokens) if max_tokens is not None and str(max_tokens).strip() != "" else 4096
+        except ValueError:
+            tokens_val = 4096
+
         # ── 1. init Kite ─────────────────────────────────────────────────
-        if kite_api_key.strip() and kite_access_token.strip():
+        if kite_key_clean and kite_token_clean:
             T.init_kite(
-                api_key      = kite_api_key.strip(),
-                access_token = kite_access_token.strip(),
+                api_key      = kite_key_clean,
+                access_token = kite_token_clean,
             )
+            if not T.kite_available():
+                raise RuntimeError("Kite authentication failed - not connected!")
 
         # ── 2. resolve provider ──────────────────────────────────────────
-        langchain_provider = PROVIDER_MAP.get(provider.lower(), "openai")
+        langchain_provider = PROVIDER_MAP.get(provider.lower() if provider else "openai", "openai")
         resolved_url       = (
-            base_url.strip()
-            or PROVIDER_URLS.get(provider.lower(), "")
+            base_url_clean
+            or PROVIDER_URLS.get(provider.lower() if provider else "openai", "")
             or None
         )
 
         # ── 3. build LLMConfig via llm_service.py ────────────────────────
         config = LLMConfig(
-            model       = model.strip(),
-            api_key     = api_key.strip(),
+            model       = model_clean,
+            api_key     = api_key_clean,
             provider    = langchain_provider,
-            temperature = float(temperature),
-            max_tokens  = int(max_tokens),
+            temperature = temp_val,
+            max_tokens  = tokens_val,
             base_url    = resolved_url,
         )
 
         # ── 4. build orchestrator (all sub-agents share this service) ────
         _orchestrator = build_orchestrator(
-            model       = model.strip(),
-            api_key     = api_key.strip(),
+            model       = model_clean,
+            api_key     = api_key_clean,
             base_url    = resolved_url or "https://openrouter.ai/api/v1",
-            temperature = float(temperature),
-            max_tokens  = int(max_tokens),
+            temperature = temp_val,
+            max_tokens  = tokens_val,
             approval_fn = human_approval_popup,
         )
 
         return (
             f"✅ Connected\n"
             f"   provider : {provider}\n"
-            f"   model    : {model.strip()}\n"
+            f"   model    : {model_clean}\n"
             f"   endpoint : {resolved_url or 'provider default'}\n"
-            f"   kite     : {'✅' if kite_api_key.strip() else '⚠️  not set'}"
+            f"   kite     : {'Connected ✅' if T.kite_available() else 'Not Connected ❌' if (kite_key_clean or kite_token_clean) else 'Not Set ⚠️'}"
         )
     except Exception as e:
         logger.exception("connect() failed")
@@ -157,10 +181,12 @@ def chat(message: str, history: list) -> tuple:
     """Route free-form message through the orchestrator."""
     try:
         response = get_orchestrator().run(message)
-        history.append((message, response))
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": response})
         return history, history, ""
     except Exception as e:
-        history.append((message, f"❌ Error: {e}"))
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": f"❌ Error: {e}"})
         return history, history, ""
 
 
@@ -267,8 +293,6 @@ def show_trade_log(date: str) -> str:
 def build_dashboard() -> gr.Blocks:
     with gr.Blocks(
         title   = "🤖 AI Trading System",
-        theme   = gr.themes.Soft(),
-        css     = ".gradio-container { max-width: 1400px; margin: auto; }",
     ) as demo:
 
         gr.Markdown(
@@ -525,7 +549,8 @@ if __name__ == "__main__":
     demo = build_dashboard()
     demo.launch(
         server_name = "0.0.0.0",
-        server_port = 7860,
         share       = False,
         inbrowser   = True,
+        theme       = gr.themes.Soft(),
+        css         = ".gradio-container { max-width: 1400px; margin: auto; }",
     )
