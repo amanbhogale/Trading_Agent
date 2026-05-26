@@ -102,7 +102,7 @@ for Tavily Keys https://tavily.com/
 Launch the Dashboard
 
 `cd Trading_Agent`
-`python -m dashboard.py`
+`python -m dashboard`
 
 
 ## Project Structure
