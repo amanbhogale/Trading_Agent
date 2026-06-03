@@ -93,6 +93,26 @@ def update_base_url(provider: str) -> str:
     return PROVIDER_URLS.get(provider, "")
 
 
+def test_kite_connection(api_key: str, token: str) -> bool:
+    """Return True if Kite API is reachable with these credentials, False otherwise."""
+    if not api_key or not token:
+        return False
+    try:
+        from kiteconnect import KiteConnect
+        kite = KiteConnect(api_key=api_key.strip())
+        kite.set_access_token(token.strip())
+        kite.profile()
+        return True
+    except Exception:
+        return False
+
+def test_kite_handler(api_key: str, token: str) -> str:
+    connected = test_kite_connection(api_key, token)
+    if connected:
+        return "🪁 Kite Connection: **True** (Connected ✅)"
+    else:
+        return "🪁 Kite Connection: **False** (Not Connected ❌)"
+
 def connect(
     provider         : str,
     model            : str,
@@ -166,11 +186,11 @@ def connect(
         )
 
         return (
-            f"✅ Connected\n"
+            f"✅ LLM Connected\n"
             f"   provider : {provider}\n"
             f"   model    : {model_clean}\n"
             f"   endpoint : {resolved_url or 'provider default'}\n"
-            f"   kite     : {'Connected ✅' if T.kite_available() else 'Not Connected ❌' if (kite_key_clean or kite_token_clean) else 'Not Set ⚠️'}"
+            f"🪁 Kite     : {'Connected ✅' if T.kite_available() else 'Not Connected ❌' if (kite_key_clean or kite_token_clean) else 'Not Set ⚠️'}"
         )
     except Exception as e:
         logger.exception("connect() failed")
@@ -220,8 +240,7 @@ def run_backtest(
         chart_resp = get_orchestrator().viz.run(
             f"Create backtest chart for {strat_name}"
         )
-        chart_info = json.loads(chart_resp) if chart_resp.startswith("{") else {}
-        chart_html = load_html(chart_info.get("chart_path", ""))
+        chart_html = load_html(f"data/visualizations/{strat_name}_equity.html")
         return result, chart_html
     except Exception as e:
         return f"❌ {e}", ""
@@ -231,8 +250,7 @@ def show_portfolio() -> tuple:
     """Refresh portfolio dashboard."""
     try:
         result     = get_orchestrator().get_dashboard()
-        info       = json.loads(result) if result.startswith("{") else {}
-        chart_html = load_html(info.get("dashboard_path", ""))
+        chart_html = load_html("data/visualizations/portfolio_dashboard.html")
         return result, chart_html
     except Exception as e:
         return f"❌ {e}", ""
@@ -344,6 +362,14 @@ def build_dashboard() -> gr.Blocks:
                         value = os.getenv("KITE_ACCESS_TOKEN", ""),
                         type  = "password",
                     )
+                    
+                    test_kite_btn = gr.Button("🧪 Test Kite Connection")
+                    kite_test_out = gr.Markdown()
+                    test_kite_btn.click(
+                        fn      = test_kite_handler,
+                        inputs  = [kite_key_in, kite_token_in],
+                        outputs = kite_test_out,
+                    )
 
             # auto-fill base_url on provider change
             provider_in.change(
@@ -439,6 +465,7 @@ def build_dashboard() -> gr.Blocks:
                         "sma_crossover",
                         "rsi_mean_reversion",
                         "macd_trend",
+                        "brownian_motion",
                     ],
                     label = "Strategy",
                     value = "sma_crossover",

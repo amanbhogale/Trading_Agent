@@ -1,0 +1,64 @@
+# ============================================================
+# Model Configuration — LSTM + DQN Backtest Suite
+# ============================================================
+
+# ---- LSTM Model Config ----
+lstm:
+  sequence_length: 60          # Look-back window (60 bars = ~3 months daily)
+  input_features:              # Feature columns fed into LSTM
+    - close
+    - volume
+    - rsi_14
+    - macd
+    - macd_signal
+    - bb_upper
+    - bb_lower
+    - atr_14
+    - ema_9
+    - ema_21
+    - ema_50
+    - obv
+    - vwap
+  hidden_size: 64              # LSTM hidden units per layer
+  num_layers: 2                # Stacked LSTM depth
+  dropout: 0.2                 # Recurrent dropout rate
+  output_size: 3               # Classes: 0=Hold, 1=Buy, 2=Sell
+  batch_size: 64
+  learning_rate: 0.001
+  epochs: 100
+  patience: 15                 # Early stopping patience
+  weight_decay: 1.0e-5         # L2 regularization
+  train_split: 0.65            # 65% train
+  val_split: 0.15              # 15% validation
+  test_split: 0.15             # 15% test
+  optimizer: AdamW
+  loss: weighted_cross_entropy
+
+# ---- DQN Agent Config ----
+dqn:
+  state_size: 30               # State space dimension (LSTM output + portfolio state)
+  action_size: 3               # Actions: 0=Hold, 1=Buy, 2=Sell
+  gamma: 0.99                  # Discount factor
+  epsilon_start: 1.0           # Exploration start
+  epsilon_end: 0.01            # Exploration minimum
+  epsilon_decay: 0.995         # Epsilon decay rate per episode
+  learning_rate: 0.0005
+  batch_size: 64
+  memory_size: 100000          # Replay buffer capacity
+  target_update_freq: 10       # Hard update every N episodes
+  hidden_layers: [256, 128, 64] # FC network architecture
+  double_dqn: true             # Use Double DQN to reduce overestimation
+  dueling_dqn: true            # Use Dueling architecture
+  priority_replay: true        # Prioritized Experience Replay (PER)
+  n_step_returns: 3            # N-step TD returns
+  training_episodes: 500
+  max_steps_per_episode: 1000
+
+# ---- Training Environment ----
+environment:
+  initial_capital: 100000      # Starting capital (USD)
+  transaction_cost: 0.001      # 0.1% per trade (realistic broker fee)
+  slippage: 0.0005             # 0.05% slippage
+  max_position_size: 0.30      # Max 30% of portfolio per position
+  reward_function: sharpe      # Options: pnl, sharpe, sortino, calmar
+  risk_free_rate: 0.05         # Annual risk-free rate for Sharpe calculation

@@ -1,0 +1,84 @@
+# ============================================================
+# PyTorch CUDA 12.8 index — ensures GPU-enabled wheels are pulled
+# (forward-compatible with CUDA 13.x drivers)
+--extra-index-url https://download.pytorch.org/whl/cu128
+#
+# Install tip (avoids /tmp quota errors on large wheels):
+#   TMPDIR=~/pip_tmp pip install -r requirements_dl.txt
+# ============================================================
+# Deep Learning Backtesting Suite — LSTM + DQN
+# Full Requirements
+# Python 3.14+ users: numba is NOT yet compatible with 3.14.
+#   pandas-ta and vectorbt are commented out because they depend on numba.
+#   Use `ta` (pure-Python) as the primary technical-analysis library.
+#   Switch to Python 3.12 to unlock numba, vectorbt, pandas-ta, and TensorFlow.
+# ============================================================
+
+# ---- Core Scientific Stack ----
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.11.0
+
+# ---- Deep Learning (PyTorch preferred for RL flexibility) ----
+# CUDA 12.8 builds are resolved via --extra-index-url at the top of this file
+torch>=2.1.0
+torchvision>=0.16.0
+torchaudio>=2.1.0
+
+# ---- TensorFlow / Keras (Optional — LSTM alternative backend) ----
+# NOTE: TensorFlow has NO Python 3.14 wheels as of 2026.
+# Requires Python <=3.12. Uncomment below only in a Python 3.12 venv.
+# tensorflow>=2.14.0
+# keras>=2.14.0
+
+# ---- Reinforcement Learning ----
+stable-baselines3>=2.2.0          # DQN + PPO + A2C wrappers (built on PyTorch)
+gymnasium>=0.29.0                  # OpenAI Gym successor for RL environments
+shimmy>=1.3.0                      # Gym compatibility shim for SB3
+
+# ---- Financial Data Sources ----
+yfinance>=0.2.36                   # Yahoo Finance — free OHLCV
+pandas-datareader>=0.10.0         # FRED, Quandl, Stooq feeds
+alpha-vantage>=2.3.1              # Alpha Vantage API (free tier)
+ccxt>=4.2.0                        # 100+ crypto exchange APIs
+nsepy>=0.8                         # NSE India historical data
+kiteconnect>=5.0.0                 # Zerodha Kite (live + historical)
+requests>=2.31.0
+
+# ---- Technical Analysis & Feature Engineering ----
+ta>=0.11.0                         # PRIMARY Technical Analysis library — pure Python, Python 3.14 compatible
+                                   # Replaces pandas_ta for all indicators (RSI, MACD, BB, ATR, ADX, etc.)
+# ta-lib>=0.4.28                   # OPTIONAL: Cython TA-Lib (requires `sudo apt install libta-lib-dev` first)
+# pandas-ta>=0.3.14b               # DISABLED: requires numba, which blocks on Python 3.14+
+stockstats>=0.6.2                  # OHLCV statistical features
+
+# ---- Backtesting Engines ----
+backtesting>=0.3.3                 # Lightweight backtesting.py
+# vectorbt>=0.26.1                 # DISABLED: depends on numba (Python <3.14 only)
+#   Workaround: use `backtesting>=0.3.3` (listed above) for vectorised strategy testing.
+pyfolio-reloaded>=0.9.5            # Tearsheet & risk metrics
+quantstats>=0.0.62                 # Portfolio analytics & HTML reports
+
+# ---- Data Normalisation & Preprocessing ----
+scikit-learn>=1.3.0
+imbalanced-learn>=0.11.0
+
+# ---- Visualisation ----
+matplotlib>=3.8.0
+seaborn>=0.13.0
+plotly>=5.18.0
+
+# ---- Notebook & Dashboard ----
+jupyterlab>=4.0.0
+ipywidgets>=8.1.0
+tqdm>=4.66.0
+
+# ---- Configuration & Utilities ----
+pyyaml>=6.0.1
+python-dotenv>=1.0.0
+loguru>=0.7.2
+joblib>=1.3.2
+
+# ---- GPU Monitoring (optional) ----
+gputil>=1.4.0
+psutil>=5.9.6
