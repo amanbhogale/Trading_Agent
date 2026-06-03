@@ -38,7 +38,7 @@ class MemoryManager:
     def save_agent_memory(self, memory: AgentMemory) -> str:
         memory.updated_at = datetime.now().isoformat()
         path = MEMORY_DIR / f"{memory.agent_id}.json"
-        path.write_text(json.dumps(asdict(memory), indent=2))
+        path.write_text(json.dumps(asdict(memory), indent=2, default=str))
         logger.info("Memory saved → %s", path)
         return str(path)
 
@@ -80,7 +80,7 @@ class MemoryManager:
         path.write_text(json.dumps({
             **strategy,
             "saved_at": datetime.now().isoformat(),
-        }, indent=2))
+        }, indent=2, default=str))
         return str(path)
 
     def load_strategy(self, name: str) -> Optional[Dict]:
@@ -97,7 +97,7 @@ class MemoryManager:
         path  = TRADE_LOG_DIR / f"{today}.json"
         logs  = json.loads(path.read_text()) if path.exists() else []
         logs.append({**trade, "logged_at": datetime.now().isoformat()})
-        path.write_text(json.dumps(logs, indent=2))
+        path.write_text(json.dumps(logs, indent=2, default=str))
 
     def get_trade_log(self, date: Optional[str] = None) -> List[Dict]:
         date = date or datetime.now().strftime("%Y-%m-%d")
@@ -110,7 +110,7 @@ class MemoryManager:
         path = VIZ_DIR / f"{name}.json"
         path.write_text(json.dumps({
             **meta, "saved_at": datetime.now().isoformat()
-        }, indent=2))
+        }, indent=2, default=str))
         return str(path)
 
     def list_visualizations(self) -> List[str]:

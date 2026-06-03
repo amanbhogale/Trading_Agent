@@ -12,3 +12,4 @@ tavily-python
 python-dotenv
 click
 yfinance
+Flask\nmarkdown\n

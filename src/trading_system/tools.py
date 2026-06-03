@@ -141,6 +141,9 @@ def _yf_historical(symbol: str, interval: str = "day", days: int = 30) -> pd.Dat
     if hasattr(df["date"].dtype, "tz") and df["date"].dtype.tz is not None:
         df["date"] = df["date"].dt.tz_localize(None)
  
+    # Drop rows where 'close' is missing (e.g. current incomplete day glitch)
+    df = df.dropna(subset=["close"])
+
     # Trim to requested number of days
     if interval == "day":
         df = df.tail(days)
@@ -291,7 +294,7 @@ def get_quote(symbols: str) -> str:
         return json.dumps({"error": str(e)})
 
 @tool
-def get_historical_data(symbol, interval, days):
+def get_historical_data(symbol: str, interval: str = "day", days: int = 30):
     """
     Fetch OHLCV historical data for a symbol.
  
@@ -588,6 +591,19 @@ def backtest_strategy(
             sig_line     = macd.ewm(span=9, adjust=False).mean()
             df["sig"]    = ((macd > sig_line) & (macd > 0)).astype(int)
  
+        elif strategy == "brownian_motion":
+            # Geometric Brownian Motion (GBM) drift-based strategy
+            window     = p.get("window", 20)
+            threshold  = p.get("threshold", 0.0)
+            log_ret    = np.log(df["close"] / df["close"].shift(1))
+            
+            mu         = log_ret.rolling(window).mean()
+            sigma      = log_ret.rolling(window).std()
+            
+            # Expected return drift in GBM
+            drift      = mu + 0.5 * sigma**2
+            df["sig"]  = (drift > threshold).astype(int)
+            
         else:
             return json.dumps({"error": f"Unknown strategy: {strategy!r}"})
  
@@ -653,14 +669,14 @@ def create_candlestick_chart(symbol: str, days: int = 60) -> str:
     """
     logger.info("create_candlestick_chart: symbol=%s days=%d", symbol, days)
     try:
-        raw = json.loads(get_historical_data.invoke({"symbol": symbol, "days": days}))
-        if isinstance(raw, dict) and "error" in raw:
-            return json.dumps(raw)
- 
-        if not isinstance(raw, list) or len(raw) == 0:
+        try:
+            df = _yf_historical(symbol, interval="day", days=days)
+        except Exception as e:
+            return json.dumps({"error": f"Yahoo Finance data fetch failed: {e}"})
+
+        if df is None or df.empty:
             return json.dumps({"error": f"No data returned for {symbol}"})
- 
-        df = pd.DataFrame(raw)
+
         df.columns = [c.lower() for c in df.columns]
  
         required = {"date", "open", "high", "low", "close", "volume"}
