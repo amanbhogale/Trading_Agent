@@ -99,27 +99,42 @@ for Tavily Keys https://tavily.com/
 
 ## Running the System 
 
-Launch the Dashboard
+Launch the Flask Application:
 
 `cd Trading_Agent`
-`python -m dashboard`
+`python flask_app.py`
 
+*(Note: The old Gradio dashboard can still be run via `python -m dashboard`)*
 
 ## Project Structure
 
 ```
 Trading_Agent/
-├── __init__.py            # package metadata, lazy imports
-├── llm_service.py         # base LLM wrapper (single source of truth)
-├── memory.py              # file-system persistent memory
-├── tools.py               # @tool functions (Kite, indicators, charts, search)
-├── sub_agents.py          # specialized agents (market, analysis, strategy …)
-├── main_agent.py          # OrchestratorAgent — routes to sub-agents
-├── deep_agent.py          # ARIA — alternative single-agent variant (main-for now)
-├── dashboard.py           # Gradio UI (entry point)
+├── flask_app.py           # Flask web application (main entry point)
+├── dashboard.py           # Gradio UI (legacy entry point)
+├── kite_auth.py           # Kite authentication script
+├── test_kite.py           # Kite connection test
+├── test_edge_cases.py     # Edge cases testing script
+├── backtested_dat.ipynb   # Backtesting notebook
+├── fundemental_analysis.ipynb # Fundamental analysis notebook
 ├── requirements.txt       # pip dependencies
 ├── README.md              # this file
-└── data/                  # auto-created on first run
+├── src/                   # Core application source code
+│   └── trading_system/
+│       ├── __init__.py    
+│       ├── llm_service.py # base LLM wrapper (single source of truth)
+│       ├── memory.py      # file-system persistent memory
+│       ├── tools.py       # @tool functions (Kite, indicators, charts, search)
+│       ├── sub_agents.py  # specialized agents (market, analysis, strategy …)
+│       ├── main_agent.py  # OrchestratorAgent — routes to sub-agents
+│       ├── planner_agent.py # Planner agent for task orchestration
+│       ├── data/          # data management modules
+│       └── execution/     # execution logic modules
+├── static/                # Flask static files
+├── templates/             # Flask templates
+├── output/                # Outputs (visualizations, etc.)
+├── docs/                  # Documentation
+└── data/                  # Auto-created on first run
     ├── memory/            # JSON conversation & context
     ├── strategies/        # saved backtest results
     ├── visualizations/    # HTML Plotly charts
