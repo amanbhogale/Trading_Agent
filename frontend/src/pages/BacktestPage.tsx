@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import axios from 'axios'
+import api from '../api'
 
-const API_BASE = 'http://localhost:5000/api'
 
 const STRATEGIES = [
   { value: 'sma_crossover',         label: 'SMA Crossover',          defaultParams: '{"fast": 20, "slow": 50}' },
@@ -74,7 +73,7 @@ export default function BacktestPage() {
     setOutput('')
     setChartUrl('')
     try {
-      const res = await axios.post(`${API_BASE}/backtest`, {
+      const res = await api.post('/backtest', {
         symbol: symbol.trim().toUpperCase(),
         strategy,
         params,

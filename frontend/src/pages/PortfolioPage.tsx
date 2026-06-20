@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import axios from 'axios'
+import api from '../api'
 
-const API_BASE = 'http://localhost:5000/api'
 
 export default function PortfolioPage() {
   const [loading,  setLoading]  = useState(false)
@@ -14,7 +13,7 @@ export default function PortfolioPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await axios.post(`${API_BASE}/portfolio`)
+      const res = await api.post('/portfolio')
       if (res.data.error) throw new Error(res.data.error)
       setOutput(res.data.output || '')
       setChartUrl(res.data.chart_url || '')

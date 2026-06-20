@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import axios from 'axios'
+import api from '../api'
 
-const API_BASE = 'http://localhost:5000/api'
 
 const TICKER_SYMBOLS = [
   'NSE:INFY', 'NSE:RELIANCE', 'NSE:TCS', 'NSE:HDFCBANK',
@@ -32,7 +31,7 @@ function useMarketStatus() {
   // Fetch from backend (accurate server-side check)
   async function fetchStatus() {
     try {
-      const res = await axios.get(`${API_BASE}/market_status`)
+      const res = await api.get('/market_status')
       setStatus(res.data)
     } catch {
       // Fallback: compute locally in IST
@@ -95,7 +94,7 @@ export default function TickerBar() {
   // ── Fetch real prices ─────────────────────────────────────────────────────
   async function fetchPrices() {
     try {
-      const res = await axios.post(`${API_BASE}/quotes`, {
+      const res = await api.post('/quotes', {
         symbols: TICKER_SYMBOLS.join(','),
       })
       const parsed = parseQuotes(res.data, TICKER_SYMBOLS)
