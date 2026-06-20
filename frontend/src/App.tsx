@@ -72,15 +72,17 @@ function Topbar({ connected, kiteConnected }: { connected: boolean; kiteConnecte
         <div className="topbar-title">{title}</div>
       </div>
       <div className="topbar-right">
-        <span className={`status-pill ${kiteConnected ? 'connected' : 'disconnected'}`}>
+        <span className={`status-pill ${kiteConnected ? 'connected' : 'disconnected'}`}
+          title={kiteConnected ? 'Kite broker is connected — live data & trading enabled' : 'Kite not connected — using Yahoo Finance fallback'}>
           <span className="status-dot" />
-          Kite {kiteConnected ? 'Connected' : 'Disconnected'}
+          🪁 Kite {kiteConnected ? 'Live' : 'Off'}
         </span>
-        <span className={`status-pill ${connected ? 'connected' : 'disconnected'}`}>
+        <span className={`status-pill ${connected ? 'connected' : 'disconnected'}`}
+          title={connected ? 'LLM agent is ready' : 'Connect LLM in Configuration'}>
           <span className="status-dot" />
-          LLM {connected ? 'Ready' : 'Not Set'}
+          🤖 LLM {connected ? 'Ready' : 'Off'}
         </span>
-        <div className="avatar">Z</div>
+        <div className="avatar" title="User">Z</div>
       </div>
     </div>
   )
