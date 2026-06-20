@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import axios from 'axios'
+import api from '../api'
 
-const API_BASE = 'http://localhost:5000/api'
 
 const PROVIDERS = [
   { value: 'openrouter',    label: 'OpenRouter',   baseUrl: 'https://openrouter.ai/api/v1' },
@@ -35,7 +34,7 @@ function LLMPanel({ setConnected }: { setConnected: (v: boolean) => void }) {
     setLoading(true)
     setStatus('')
     try {
-      const res = await axios.post(`${API_BASE}/connect_llm`, {
+      const res = await api.post('/connect_llm', {
         provider, model, api_key: apiKey, base_url: baseUrl,
       })
       const success = res.data.connected === true
@@ -120,7 +119,7 @@ function KitePanel({ setKiteConnected }: { setKiteConnected: (v: boolean) => voi
     setLoading(true)
     setStatus('')
     try {
-      const res = await axios.post(`${API_BASE}/connect_kite`, {
+      const res = await api.post('/connect_kite', {
         kite_key: kiteKey, kite_token: kiteToken,
       })
       const success = res.data.connected === true
@@ -141,7 +140,7 @@ function KitePanel({ setKiteConnected }: { setKiteConnected: (v: boolean) => voi
     setTesting(true)
     setStatus('')
     try {
-      const res = await axios.post(`${API_BASE}/test_kite`, {
+      const res = await api.post('/test_kite', {
         kite_key: kiteKey, kite_token: kiteToken,
       })
       const msg = res.data.message || ''

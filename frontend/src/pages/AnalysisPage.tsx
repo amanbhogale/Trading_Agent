@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import axios from 'axios'
+import api from '../api'
 
-const API_BASE = 'http://localhost:5000/api'
 
 const POPULAR_SYMBOLS = [
   'NSE:INFY', 'NSE:RELIANCE', 'NSE:TCS', 'NSE:HDFC',
@@ -20,7 +19,7 @@ export default function AnalysisPage() {
     setError('')
     setResult(null)
     try {
-      const res = await axios.post(`${API_BASE}/analysis`, { symbol: symbol.trim().toUpperCase() })
+      const res = await api.post('/analysis', { symbol: symbol.trim().toUpperCase() })
       if (res.data.error) throw new Error(res.data.error)
       setResult(res.data)
     } catch (e: any) {

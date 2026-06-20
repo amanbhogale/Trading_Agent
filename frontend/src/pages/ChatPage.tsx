@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import axios from 'axios'
+import api from '../api'
 
-const API_BASE = 'http://localhost:5000/api'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -44,7 +43,7 @@ export default function ChatPage() {
     setMessages(prev => [...prev, userMsg])
 
     try {
-      const res = await axios.post(`${API_BASE}/chat`, { message: text })
+      const res = await api.post('/chat', { message: text })
       const aiMsg: Message = {
         role: 'assistant',
         content: '',
