@@ -9,6 +9,37 @@ const PROVIDERS = [
   { value: 'google-gemini', label: 'Google Gemini', baseUrl: '' },
 ]
 
+// Verified valid model IDs per provider
+const PROVIDER_MODELS: Record<string, { id: string; label: string; free?: boolean }[]> = {
+  openrouter: [
+    { id: 'deepseek/deepseek-r1:free',                label: 'DeepSeek R1',              free: true },
+    { id: 'deepseek/deepseek-chat-v3-0324:free',      label: 'DeepSeek Chat v3',         free: true },
+    { id: 'meta-llama/llama-3.3-70b-instruct:free',   label: 'Llama 3.3 70B',            free: true },
+    { id: 'google/gemma-3-27b-it:free',               label: 'Gemma 3 27B',              free: true },
+    { id: 'mistralai/mistral-7b-instruct:free',       label: 'Mistral 7B',               free: true },
+    { id: 'qwen/qwen3-235b-a22b:free',                label: 'Qwen3 235B',               free: true },
+    { id: 'openai/gpt-4o',                            label: 'GPT-4o (paid)',            free: false },
+    { id: 'anthropic/claude-sonnet-4-5',              label: 'Claude Sonnet 4.5 (paid)', free: false },
+    { id: 'google/gemini-2.5-pro',                    label: 'Gemini 2.5 Pro (paid)',    free: false },
+  ],
+  openai: [
+    { id: 'gpt-4o',          label: 'GPT-4o' },
+    { id: 'gpt-4o-mini',     label: 'GPT-4o Mini' },
+    { id: 'gpt-4-turbo',     label: 'GPT-4 Turbo' },
+    { id: 'o1-mini',         label: 'o1 Mini' },
+  ],
+  anthropic: [
+    { id: 'claude-sonnet-4-5',      label: 'Claude Sonnet 4.5' },
+    { id: 'claude-3-5-haiku-latest',label: 'Claude 3.5 Haiku' },
+    { id: 'claude-opus-4-5',        label: 'Claude Opus 4.5' },
+  ],
+  'google-gemini': [
+    { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+  ],
+}
+
 interface Props {
   setConnected:     (v: boolean) => void
   setKiteConnected: (v: boolean) => void
@@ -17,7 +48,7 @@ interface Props {
 /* ── LLM Connection Panel ───────────────────── */
 function LLMPanel({ setConnected }: { setConnected: (v: boolean) => void }) {
   const [provider,    setProvider]    = useState('openrouter')
-  const [model,       setModel]       = useState('nvidia/nemotron-super-49b-v1:free')
+  const [model,       setModel]       = useState('deepseek/deepseek-r1:free')
   const [apiKey,      setApiKey]      = useState('')
   const [baseUrl,     setBaseUrl]     = useState('https://openrouter.ai/api/v1')
   const [loading,     setLoading]     = useState(false)
@@ -28,6 +59,9 @@ function LLMPanel({ setConnected }: { setConnected: (v: boolean) => void }) {
     setProvider(val)
     const p = PROVIDERS.find(p => p.value === val)
     if (p) setBaseUrl(p.baseUrl)
+    // Auto-select first model for new provider
+    const models = PROVIDER_MODELS[val]
+    if (models?.length) setModel(models[0].id)
   }
 
   async function connect() {
@@ -76,7 +110,34 @@ function LLMPanel({ setConnected }: { setConnected: (v: boolean) => void }) {
       <div className="form-row">
         <label className="form-label">Model</label>
         <input className="form-input" value={model} onChange={e => setModel(e.target.value)}
-          placeholder="e.g. gpt-4o, claude-3-5-sonnet, gemini-pro" />
+          placeholder="e.g. deepseek/deepseek-r1:free" />
+        {/* Quick-select chips */}
+        {PROVIDER_MODELS[provider] && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+            {PROVIDER_MODELS[provider].map(m => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setModel(m.id)}
+                className="btn btn-sm"
+                style={{
+                  background: model === m.id ? 'var(--accent-blue)' : 'var(--bg-elevated)',
+                  border: `1px solid ${model === m.id ? 'var(--accent-blue)' : 'var(--border-mid)'}`,
+                  color: model === m.id ? 'white' : 'var(--text-secondary)',
+                  borderRadius: 99,
+                  fontSize: 11,
+                  padding: '3px 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                {m.free && <span style={{ color: '#10b981', fontWeight: 800 }}>FREE</span>}
+                {m.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="form-row">
