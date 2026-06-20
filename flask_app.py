@@ -200,6 +200,84 @@ def api_portfolio():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+@app.route('/api/quotes', methods=['POST'])
+def api_quotes():
+    """Fetch live/last quotes for multiple symbols via get_quote tool."""
+    try:
+        symbols = request.json.get('symbols', 'NSE:INFY,NSE:RELIANCE,NSE:TCS')
+        raw = T.get_quote.invoke({'symbols': symbols})
+        return jsonify(json.loads(raw))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/market_status', methods=['GET'])
+def api_market_status():
+    """Return whether NSE market is currently open."""
+    from datetime import datetime, time as dtime
+    import zoneinfo
+    tz = zoneinfo.ZoneInfo('Asia/Kolkata')
+    now = datetime.now(tz)
+    weekday = now.weekday()          # Mon=0, Fri=4, Sat=5, Sun=6
+    t = now.time()
+    market_open  = dtime(9, 15)
+    market_close = dtime(15, 30)
+    is_open = (weekday < 5) and (market_open <= t <= market_close)
+    return jsonify({
+        'is_open': is_open,
+        'current_time_ist': now.strftime('%H:%M:%S'),
+        'day': now.strftime('%A'),
+        'next_open': '09:15 IST' if not is_open else None,
+    })
+
+
+@app.route('/api/connect_llm', methods=['POST'])
+def api_connect_llm():
+    """Connect only the LLM/orchestrator."""
+    global _orchestrator
+    try:
+        data     = request.json
+        provider = data.get('provider')
+        model    = data.get('model', '').strip()
+        api_key  = data.get('api_key', '').strip()
+        base_url = data.get('base_url', '').strip()
+        _orchestrator = build_orchestrator(
+            model=model,
+            api_key=api_key,
+            base_url=base_url or 'https://openrouter.ai/api/v1',
+            temperature=0.0,
+            max_tokens=4096,
+            approval_fn=human_approval_popup,
+        )
+        return jsonify({'message': f'✅ LLM Connected — Model: {model}', 'connected': True})
+    except Exception as e:
+        logger.exception('LLM connect failed')
+        return jsonify({'error': f'❌ {e}', 'connected': False}), 400
+
+
+@app.route('/api/connect_kite', methods=['POST'])
+def api_connect_kite():
+    """Connect only Kite broker."""
+    try:
+        data       = request.json
+        kite_key   = data.get('kite_key', '').strip()
+        kite_token = data.get('kite_token', '').strip()
+        if not kite_key or not kite_token:
+            return jsonify({'error': 'Missing API key or access token', 'connected': False}), 400
+        T.init_kite(kite_key, kite_token)
+        # Verify by fetching profile
+        from kiteconnect import KiteConnect
+        kite = T.get_kite()
+        profile = kite.profile()
+        return jsonify({
+            'message': f"✅ Kite Connected — {profile.get('user_name', 'User')}",
+            'connected': True,
+            'user': profile.get('user_name', ''),
+        })
+    except Exception as e:
+        return jsonify({'error': f'❌ {e}', 'connected': False}), 400
+
+
 if __name__ == '__main__':
     # Run the Flask app
     app.run(debug=True, host='0.0.0.0', port=5000)
