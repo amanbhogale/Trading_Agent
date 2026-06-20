@@ -17,8 +17,37 @@ from trading_system.memory import MemoryManager
 import trading_system.tools as T
 
 load_dotenv()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(name)s  %(levelname)s  %(message)s")
+
+# ── In-memory log capture (last 500 lines) ────────────────────────────────────
+from collections import deque
+
+class _DequeHandler(logging.Handler):
+    def __init__(self, maxlen=500):
+        super().__init__()
+        self.records: deque = deque(maxlen=maxlen)
+
+    def emit(self, record):
+        from datetime import datetime
+        self.records.append({
+            'time':    datetime.now().strftime('%H:%M:%S'),
+            'level':   record.levelname,
+            'name':    record.name,
+            'message': self.format(record),
+        })
+
+_log_handler = _DequeHandler(maxlen=500)
+_log_handler.setFormatter(logging.Formatter('%(message)s'))
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s  %(name)s  %(levelname)s  %(message)s',
+    handlers=[logging.StreamHandler(), _log_handler],
+)
 logger = logging.getLogger(__name__)
+logging.getLogger('trading_system').addHandler(_log_handler)
+logging.getLogger('httpx').addHandler(_log_handler)
+logging.getLogger('werkzeug').addHandler(_log_handler)
+# ─────────────────────────────────────────────────────────────────────────────
 
 from flask_cors import CORS
 
@@ -199,6 +228,14 @@ def api_portfolio():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+@app.route('/api/logs', methods=['GET'])
+def api_logs():
+    """Return recent captured log records."""
+    n = int(request.args.get('n', 200))
+    records = list(_log_handler.records)[-n:]
+    return jsonify({'logs': records})
+
 
 @app.route('/api/quotes', methods=['POST'])
 def api_quotes():

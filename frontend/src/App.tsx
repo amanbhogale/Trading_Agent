@@ -5,6 +5,7 @@ import ChatPage from './pages/ChatPage'
 import AnalysisPage from './pages/AnalysisPage'
 import BacktestPage from './pages/BacktestPage'
 import PortfolioPage from './pages/PortfolioPage'
+import LogsPage from './pages/LogsPage'
 import TickerBar from './components/TickerBar'
 
 const API_BASE = 'http://localhost:5000'
@@ -15,6 +16,7 @@ const NAV_ITEMS = [
   { path: '/analysis',  icon: '📊',  label: 'Analysis'       },
   { path: '/backtest',  icon: '🧪',  label: 'Backtest'       },
   { path: '/portfolio', icon: '💼',  label: 'Portfolio'      },
+  { path: '/logs',      icon: '🖥️',  label: 'Gateway Logs'  },
 ]
 
 function Sidebar({ connected }: { connected: boolean }) {
@@ -61,6 +63,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/analysis':  'Market Analysis',
   '/backtest':  'Strategy Backtest',
   '/portfolio': 'Live Portfolio',
+  '/logs':      'Gateway Logs',
 }
 
 function Topbar({ connected, kiteConnected }: { connected: boolean; kiteConnected: boolean }) {
@@ -105,6 +108,7 @@ export default function App() {
             <Route path="/analysis"  element={<AnalysisPage />} />
             <Route path="/backtest"  element={<BacktestPage />} />
             <Route path="/portfolio" element={<PortfolioPage />} />
+            <Route path="/logs"      element={<LogsPage />} />
           </Routes>
         </div>
       </div>

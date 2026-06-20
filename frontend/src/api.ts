@@ -4,7 +4,8 @@ export const API_BASE = 'http://localhost:5000/api'
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 60_000,   // 60s — LLM calls can be slow
+  // No client-side timeout — LLM + LangGraph calls can take 60-120s
+  timeout: 0,
 })
 
 // ── Response interceptor — humanize errors ──────────────────────────────────
