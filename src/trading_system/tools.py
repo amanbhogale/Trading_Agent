@@ -293,40 +293,68 @@ def get_quote(symbols: str) -> str:
     except Exception as e:
         return json.dumps({"error": str(e)})
 
+def _fetch_historical_data(symbol: str, interval: str = "day", days: int = 30) -> pd.DataFrame:
+    """Internal function to fetch historical data with caching."""
+    days = int(days)
+    cache_dir = Path("data/cache")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f"{symbol.replace(':', '_')}_{interval}_{days}d.parquet"
+    
+    # Simple caching: if file exists and was modified recently (e.g., today), load it.
+    # For now, we just check if it exists for the same parameter. In a production app, we'd check timestamps.
+    if cache_file.exists():
+        # Check if modified today
+        mtime = datetime.fromtimestamp(cache_file.stat().st_mtime)
+        if mtime.date() == datetime.now().date():
+            try:
+                return pd.read_parquet(cache_file)
+            except Exception as e:
+                logger.warning("Cache read failed, re-fetching: %s", e)
+
+    df = None
+    if kite_available():
+        try:
+            kite = get_kite()
+            instrument = kite.ltp(symbol)[symbol]["instrument_token"]
+            to_date = datetime.now()
+            from_date = to_date - timedelta(days=days)
+            data = kite.historical_data(instrument, from_date, to_date, interval)
+            df = pd.DataFrame(data)
+        except Exception as e:
+            logger.warning("Kite failed, falling back to Yahoo: %s", e)
+            
+    if df is None or df.empty:
+        df = _yf_historical(symbol, interval, days)
+        
+    if df is not None and not df.empty:
+        df.to_parquet(cache_file)
+        
+    return df
+
 @tool
 def get_historical_data(symbol: str, interval: str = "day", days: int = 30):
     """
     Fetch OHLCV historical data for a symbol.
- 
-    Uses Kite if authenticated, Yahoo Finance otherwise.
-    Returns a JSON array of OHLCV records with columns:
-    date, open, high, low, close, volume.
- 
-    Parameters
-    ----------
-    symbol   : Kite-style symbol, e.g. "NSE:INFY"
-    interval : minute | 3minute | 5minute | 15minute | 30minute |
-               60minute | day | week | month
-    days     : number of calendar days to look back (default 30)
+    Returns a JSON summary (to avoid LLM token limits).
+    The raw data is stored in the agent's memory context.
     """
-    days = int(days)
     try:
-        if kite_available():
-            try:
-                kite = get_kite()
-                instrument = kite.ltp(symbol)[symbol]["instrument_token"]
-                to_date = datetime.now()
-                from_date = to_date - timedelta(days=days)
-                data = kite.historical_data(instrument, from_date, to_date, interval)
-                df = pd.DataFrame(data)
-                memory.update_context("data_agent", f"hist_{symbol}", df.to_dict())
-                return df.to_json(orient="records", date_format="iso")
-            except Exception as e:
-                logger.warning("Kite failed, falling back to Yahoo: %s", e)
-
-        df = _yf_historical(symbol, interval, days)
-        memory.update_context("data_agent", f"hist_{symbol}", df.to_dict())
-        return df.to_json(orient="records", date_format="iso")
+        df = _fetch_historical_data(symbol, interval, days)
+        if df is not None and not df.empty:
+            memory.update_context("data_agent", f"hist_{symbol}", df.to_dict())
+            
+            summary = {
+                "symbol": symbol,
+                "interval": interval,
+                "days": days,
+                "rows": len(df),
+                "start_date": str(df["date"].min()),
+                "end_date": str(df["date"].max()),
+                "latest_close": float(df["close"].iloc[-1]),
+                "message": "Full raw data stored in backend memory."
+            }
+            return json.dumps(summary)
+        return json.dumps({"error": f"No data found for {symbol}"})
     except Exception as e:
         logger.error("get_historical_data failed: %s", e)
         return json.dumps({"error": str(e)})
@@ -488,13 +516,9 @@ def calculate_indicators(symbol: str, days: int = 60) -> str:
     days   : lookback days for data (minimum 60 recommended)
     """
     try:
-        raw  = json.loads(get_historical_data.invoke({"symbol": symbol, "days": days}))
-        if isinstance(raw, dict) and "error" in raw:
-            return json.dumps(raw)
- 
-        df   = pd.DataFrame(raw)
-        df["date"] = pd.to_datetime(df["date"])
-        df   = df.sort_values("date").reset_index(drop=True)
+        df = _fetch_historical_data(symbol, "day", days)
+        if df is None or df.empty:
+            return json.dumps({"error": f"No data returned for {symbol}"})
         df   = _compute_indicators(df)
  
         last = df.iloc[-1].to_dict()
@@ -548,7 +572,7 @@ def backtest_strategy(
     Parameters
     ----------
     symbol   : e.g. "NSE:INFY"
-    strategy : sma_crossover | rsi_mean_reversion | macd_trend
+    strategy : sma_crossover | rsi_mean_reversion | macd_trend | brownian_motion | market_making | statistical_arbitrage | momentum | mean_reversion | sentiment
     params   : JSON string with strategy-specific parameters
     days     : lookback days (default 365)
  
@@ -556,13 +580,9 @@ def backtest_strategy(
                     max_drawdown_pct, win_rate_pct, num_trades
     """
     try:
-        raw = json.loads(get_historical_data.invoke({"symbol": symbol, "days": days}))
-        if isinstance(raw, dict) and "error" in raw:
-            return json.dumps(raw)
- 
-        df  = pd.DataFrame(raw)
-        df["date"]  = pd.to_datetime(df["date"])
-        df  = df.sort_values("date").reset_index(drop=True)
+        df = _fetch_historical_data(symbol, "day", days)
+        if df is None or df.empty:
+            return json.dumps({"error": f"No data returned for {symbol}"})
         p   = json.loads(params)
  
         # ── strategy signal generation ───────────────────────────────────
@@ -574,15 +594,9 @@ def backtest_strategy(
             df["sig"]        = (df["sma_fast"] > df["sma_slow"]).astype(int)
  
         elif strategy == "rsi_mean_reversion":
-            ob     = p.get("overbought", 70)
-            ov     = p.get("oversold",   30)
-            delta  = df["close"].diff()
-            gain   = delta.clip(lower=0).rolling(14).mean()
-            loss   = (-delta.clip(upper=0)).rolling(14).mean()
-            rsi    = 100 - (100 / (1 + gain / loss))
-            df["sig"] = 0
-            df.loc[rsi < ov, "sig"] = 1
-            df.loc[rsi > ob, "sig"] = 0
+            from .strategies import MeanReversionStrategy
+            strat = MeanReversionStrategy()
+            df = strat.generate_signals(df, **p)
  
         elif strategy == "macd_trend":
             ema12        = df["close"].ewm(span=12, adjust=False).mean()
@@ -595,22 +609,62 @@ def backtest_strategy(
             # Geometric Brownian Motion (GBM) drift-based strategy
             window     = p.get("window", 20)
             threshold  = p.get("threshold", 0.0)
-            log_ret    = np.log(df["close"] / df["close"].shift(1))
             
-            mu         = log_ret.rolling(window).mean()
-            sigma      = log_ret.rolling(window).std()
+            # Edge case 1: Prevent negative/zero prices for log calculation
+            safe_close = df["close"].clip(lower=1e-8)
+            log_ret    = np.log(safe_close / safe_close.shift(1))
+            
+            # Edge case 2: Handle dataframes shorter than the window
+            eff_window = min(window, max(1, len(df)))
+            
+            # Edge case 3: Handle NaNs from rolling with min_periods
+            mu         = log_ret.rolling(eff_window, min_periods=1).mean().fillna(0.0)
+            sigma      = log_ret.rolling(eff_window, min_periods=1).std().fillna(0.0)
             
             # Expected return drift in GBM
             drift      = mu + 0.5 * sigma**2
+            
+            # Fill remaining NaNs (if any)
+            drift      = drift.fillna(0.0)
             df["sig"]  = (drift > threshold).astype(int)
             
+        elif strategy == "market_making":
+            from .strategies import MarketMakingStrategy
+            strat = MarketMakingStrategy()
+            df = strat.generate_signals(df, **p)
+
+        elif strategy == "statistical_arbitrage":
+            from .strategies import StatisticalArbitrageStrategy
+            strat = StatisticalArbitrageStrategy()
+            df = strat.generate_signals(df, **p)
+
+        elif strategy == "momentum":
+            from .strategies import MomentumStrategy
+            strat = MomentumStrategy()
+            df = strat.generate_signals(df, **p)
+
+        elif strategy == "mean_reversion":
+            from .strategies import MeanReversionStrategy
+            strat = MeanReversionStrategy()
+            df = strat.generate_signals(df, **p)
+
+        elif strategy == "sentiment":
+            from .strategies import SentimentBasedStrategy
+            strat = SentimentBasedStrategy()
+            df = strat.generate_signals(df, **p)
+
         else:
             return json.dumps({"error": f"Unknown strategy: {strategy!r}"})
  
         # ── returns computation ──────────────────────────────────────────
         df["position"] = df["sig"].shift(1)
         df["ret"]      = df["close"].pct_change()
-        df["strat_ret"]= df["ret"] * df["position"]
+        
+        # Add a configurable cost parameter or default to 0.1% per round trip (0.05% slippage + 0.05% fees)
+        fee_pct        = p.get("fee_pct", 0.001)
+        df["trades"]   = df["position"].diff().abs()
+        
+        df["strat_ret"]= (df["ret"] * df["position"]) - (df["trades"] * fee_pct)
         df             = df.dropna()
  
         cum_ret  = float((1 + df["strat_ret"]).cumprod().iloc[-1] - 1)
@@ -670,7 +724,8 @@ def create_candlestick_chart(symbol: str, days: int = 60) -> str:
     logger.info("create_candlestick_chart: symbol=%s days=%d", symbol, days)
     try:
         try:
-            df = _yf_historical(symbol, interval="day", days=days)
+            # Fetch extra data (100 days) to allow indicators (like EMA50) to "warm up"
+            df = _fetch_historical_data(symbol, interval="day", days=days + 100)
         except Exception as e:
             return json.dumps({"error": f"Yahoo Finance data fetch failed: {e}"})
 
@@ -686,8 +741,11 @@ def create_candlestick_chart(symbol: str, days: int = 60) -> str:
  
         df["date"] = pd.to_datetime(df["date"])
  
-        # ── compute indicators ───────────────────────────────────────────
+        # ── compute indicators on larger dataset ─────────────────────────
         df = _compute_indicators(df)
+        
+        # Trim down to the requested number of days for the chart
+        df = df.tail(days).reset_index(drop=True)
  
         # ── build figure ─────────────────────────────────────────────────
         fig = make_subplots(
