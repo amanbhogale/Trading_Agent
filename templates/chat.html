@@ -40,10 +40,11 @@
         history.scrollTop = history.scrollHeight;
         
         try {
+            const mode = localStorage.getItem('trading_mode') || 'equity';
             const res = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({message: msg})
+                body: JSON.stringify({message: msg, mode: mode})
             });
             const data = await res.json();
             

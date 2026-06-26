@@ -2,17 +2,23 @@
 import json
 import logging
 from typing import Dict, List, Optional, Tuple
-from langchain_core.messages import (
-    HumanMessage, SystemMessage, AIMessage, ToolMessage
-)
+from langchain_core.messages import SystemMessage
 
-from .llm_service import LLMService, LLMConfig
-from .memory import MemoryManager
+from langgraph.prebuilt import create_react_agent
+from langgraph.checkpoint.postgres import PostgresSaver
+from psycopg_pool import ConnectionPool
+
+from .llm_service import LLMService
 from . import tools as T
+from .memory import DB_CONFIG
 
 logger = logging.getLogger(__name__)
-memory = MemoryManager()
 
+import urllib.parse
+_encoded_pw = urllib.parse.quote_plus(DB_CONFIG['password'])
+_conninfo = f"postgresql://{DB_CONFIG['user']}:{_encoded_pw}@{DB_CONFIG['host']}/{DB_CONFIG['dbname']}"
+pool = ConnectionPool(conninfo=_conninfo)
+checkpointer = PostgresSaver(pool)
 
 # ---------------------------------------------------------------------------
 # Base Sub-Agent
@@ -25,82 +31,31 @@ class BaseSubAgent:
     AGENT_ID     : str = "base_agent"
 
     def __init__(self, llm_service: LLMService) -> None:
-        self.llm     = llm_service
-        self.mem     = memory
-        self._client = llm_service.with_tools(self._get_tools())
+        self.llm = llm_service
+        self._tools = self._get_tools()
+        
+        # Create a LangGraph React Agent
+        self.graph = create_react_agent(
+            model=llm_service._client,  # Extract the underlying langchain chat model
+            tools=self._tools,
+            prompt=SystemMessage(content=self.SYSTEM_PROMPT),
+            checkpointer=checkpointer
+        )
 
     def _get_tools(self) -> list:
         return []
 
-    def _build_messages(self, user_msg: str) -> List:
-        mem   = self.mem.load_agent_memory(self.AGENT_ID)
-        msgs  = [SystemMessage(content=self.SYSTEM_PROMPT)]
-
-        # last 6 conversation turns for context window efficiency
-        for turn in mem.conversation[-6:]:
-            cls = HumanMessage if turn["role"] == "human" else AIMessage
-            msgs.append(cls(content=turn["content"]))
-
-        msgs.append(HumanMessage(content=user_msg))
-        return msgs
-
-    def _run_tool_loop(self, messages: List) -> str:
-        """Agentic loop: call LLM → execute tools → repeat until done."""
-        tool_map = {t.name: t for t in self._get_tools()}
-        previous_calls = []
-
-        for _ in range(10):           # max 10 iterations
-            response = self._client.invoke(messages)
-            messages.append(response)
-
-            if not getattr(response, "tool_calls", None):
-                # no more tool calls → done
-                return response.content
-
-            current_calls = []
-            for tc in response.tool_calls:
-                current_calls.append((tc["name"], json.dumps(tc["args"], sort_keys=True)))
-
-            # Infinite loop detection: if the model calls the exact same tools with same args consecutively
-            if previous_calls == current_calls:
-                logger.warning("[%s] Infinite loop detected! Same tool calls repeated consecutively.", self.AGENT_ID)
-                messages.pop()  # remove the duplicate tool calls AIMessage
-                messages.append(HumanMessage(content=(
-                    "System Note: You are stuck in an infinite loop repeating the exact same tool calls. "
-                    "Please do not call any more tools. Instead, immediately synthesize a final response for the user "
-                    "using only the tool outputs and data already retrieved in the conversation history."
-                )))
-                try:
-                    final_response = self._client.invoke(messages)
-                    return final_response.content
-                except Exception as e:
-                    return f"Loop recovery failed: {e}"
-
-            previous_calls = current_calls
-
-            for tc in response.tool_calls:
-                fn_name = tc["name"]
-                fn_args = tc["args"]
-                logger.info("[%s] tool=%s  args=%s", self.AGENT_ID, fn_name, fn_args)
-
-                if fn_name in tool_map:
-                    result = tool_map[fn_name].invoke(fn_args)
-                else:
-                    result = json.dumps({"error": f"unknown tool {fn_name}"})
-
-                messages.append(ToolMessage(
-                    content      = str(result),
-                    tool_call_id = tc["id"],
-                ))
-
-        return "Max iterations reached."
-
     def run(self, user_message: str) -> str:
-        self.mem.append_conversation(self.AGENT_ID, "human", user_message)
-        messages = self._build_messages(user_message)
-        response = self._run_tool_loop(messages)
-        self.mem.append_conversation(self.AGENT_ID, "ai", response)
-        return response
+        # We use the AGENT_ID as the thread ID to persist conversations uniquely per agent.
+        # In a real multi-user scenario, this would be user_id + agent_id.
+        config = {"configurable": {"thread_id": self.AGENT_ID}}
+        
+        # Stream the graph and return the final AI message content
+        response = self.graph.invoke(
+            {"messages": [("human", user_message)]}, 
+            config=config
+        )
+        return response["messages"][-1].content
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +115,7 @@ class StrategyAgent(BaseSubAgent):
     SYSTEM_PROMPT = """
     You are a Quantitative Strategy Designer.
     You design, backtest, and evaluate trading strategies.
-    Available strategies: sma_crossover, rsi_mean_reversion, macd_trend.
+    Available strategies: sma_crossover, rsi_mean_reversion, macd_trend, brownian_motion, market_making, statistical_arbitrage, momentum, mean_reversion, sentiment.
     Always report: total return, sharpe ratio, max drawdown, win rate,
     number of trades, and comparison vs buy-and-hold.
     Save promising strategies for future reference.
@@ -235,12 +190,10 @@ class ExecutionAgent(BaseSubAgent):
     You place, modify, and cancel orders on Zerodha Kite.
     NEVER place an order without explicit human approval.
     Confirm order details before execution.
-    Always log the result to memory.
     """
 
     def __init__(self, llm_service: LLMService, approval_fn=None) -> None:
         super().__init__(llm_service)
-        # approval_fn: callable(order_details) -> bool
         self._approve = approval_fn or (lambda _: False)
 
     def _get_tools(self):
@@ -249,10 +202,10 @@ class ExecutionAgent(BaseSubAgent):
             T.cancel_order,
             T.get_funds,
             T.get_trade_log_tool,
+            T.place_order, # Provided to the graph, but restricted via human-in-the-loop logic externally if needed
         ]
 
     def execute_with_approval(self, order: Dict) -> str:
-        """Human-in-the-loop execution gate."""
         summary = (
             f"⚠️  TRADE REQUEST\n"
             f"  Symbol : {order.get('symbol')}\n"

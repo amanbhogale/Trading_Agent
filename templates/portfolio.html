@@ -3,8 +3,15 @@
 <h1>💼 Portfolio</h1>
 <p class="subtitle">Live Portfolio Dashboard (Requires Kite Authentication)</p>
 
-<div class="card">
+<div class="card" style="display: flex; justify-content: space-between; align-items: center;">
+    <span style="font-size: 0.95rem; color: var(--text-muted);">Sync and view holdings, cash balance, and margin details.</span>
     <button id="refresh-btn" onclick="refreshPortfolio()">🔄 Refresh</button>
+</div>
+
+<!-- Loading spinner block -->
+<div class="card" id="portfolio-loading-card" style="display: none; text-align: center; padding: 40px 20px;">
+    <div class="spinner" style="margin: 0 auto 15px auto;"></div>
+    <p>Retrieving portfolio holdings & current market valuations...</p>
 </div>
 
 <div id="results-area" style="display: none;">
@@ -21,26 +28,54 @@
 <script>
     async function refreshPortfolio() {
         const btn = document.getElementById('refresh-btn');
+        const loadingCard = document.getElementById('portfolio-loading-card');
+        const resultsArea = document.getElementById('results-area');
+        
         btn.disabled = true;
         btn.innerText = 'Refreshing...';
+        loadingCard.style.display = 'block';
+        resultsArea.style.display = 'none';
+        
+        const mode = localStorage.getItem('trading_mode') || 'equity';
         
         try {
             const res = await fetch('/api/portfolio', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'}
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ mode: mode })
             });
             const result = await res.json();
             
-            document.getElementById('results-area').style.display = 'block';
-            document.getElementById('markdown-output').innerHTML = result.output;
-            document.getElementById('chart-iframe').src = result.chart_url;
-            
+            if (result.error) {
+                alert('Error: ' + result.error);
+                loadingCard.style.display = 'none';
+            } else {
+                loadingCard.style.display = 'none';
+                resultsArea.style.display = 'block';
+                document.getElementById('markdown-output').innerHTML = result.output;
+                
+                const chartIframe = document.getElementById('chart-iframe');
+                if (mode === 'equity') {
+                    chartIframe.style.display = 'block';
+                    chartIframe.src = result.chart_url;
+                } else {
+                    chartIframe.style.display = 'none';
+                    chartIframe.src = '';
+                }
+            }
         } catch (e) {
             alert('Error: ' + e.message);
+            loadingCard.style.display = 'none';
         }
         
         btn.disabled = false;
         btn.innerText = '🔄 Refresh';
     }
+
+    // Refresh on load
+    document.addEventListener('DOMContentLoaded', refreshPortfolio);
+
+    // Refresh automatically when trading mode changes
+    window.addEventListener('tradingModeChanged', refreshPortfolio);
 </script>
 {% endblock %}

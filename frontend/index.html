@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Antigravity Trade — AI-powered multi-strategy trading platform with real-time market data, backtesting, and portfolio management." />
-    <title>Antigravity Trade | AI Trading Platform</title>
+    <meta name="description" content="Auxesis Trade — AI-powered multi-strategy trading platform with real-time market data, backtesting, and portfolio management." />
+    <title>Auxesis Trade | AI Trading Platform</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -14,18 +14,5 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <datalist id="react-tickers-datalist"></datalist>
-    <script>
-      fetch('/api/tickers').then(r => r.json()).then(data => {
-        const dl = document.getElementById('react-tickers-datalist');
-        if (data.tickers) {
-          data.tickers.forEach(t => {
-            const opt = document.createElement('option');
-            opt.value = t.symbol;
-            opt.text = t.name + (t.sector ? ' | ' + t.sector : '');
-            dl.appendChild(opt);
-          });
-        }
-      }).catch(e => console.error("Failed to fetch tickers for datalist", e));
-    </script>
   </body>
 </html>

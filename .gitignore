@@ -1,0 +1,31 @@
+.env
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.virtual_documents/
+node_modules/
+dist/
+.agents/
+scratch/
+
+# Local data and cache
+data/
+deep_learning_backtest/data/
+deep_learning_backtest/models/
+deep_learning_backtest/results/
+deep_learning_backtest/eda_results/
+output/
+backtested_dat.ipynb
+deep_learning_backtest/04_dqn_agent_rainbow.ipynb
+deep_learning_backtest/Colab_Master_Pipeline.ipynb
+deep_learning_backtest/Colab_Rainbow_DQN.ipynb
+fundemental_analysis.ipynb
+
+# Local test files
+test_*.py
+pytest.ini
+deep_learning_backtest/tests/
+deep_learning_backtest/test_device.py
+deep_learning_backtest/test_run.py
+deep_learning_backtest/test_script.py
+learn_graph/

@@ -17,7 +17,7 @@ from trading_system.main_agent import build_orchestrator, OrchestratorAgent
 from trading_system.memory import MemoryManager
 import trading_system.tools as T
 
-load_dotenv()
+load_dotenv(override=True)
 logging.basicConfig(
     level  = logging.INFO,
     format = "%(asctime)s  %(name)s  %(levelname)s  %(message)s",

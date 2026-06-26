@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 memory = MemoryManager()
 
 
-_kite = Optional[KiteConnect]
+_kite: Optional[KiteConnect] = None
 
 def get_kite() -> KiteConnect:
     if _kite is None:
@@ -44,23 +44,43 @@ def init_kite(api_key: str, access_token: str) -> KiteConnect:
         _kite = None
         logger.error("Kite verification failed: %s", e)
         raise RuntimeError(f"Kite verification failed. Please check your API key/Access token. Details: {e}")
-def _kite_to_yf(symbol : str)-> str:
-    """convert kite symbols to yahoo Finance ticker. 
+def _kite_to_yf(symbol: str) -> str:
+    """Convert Kite-style symbols to Yahoo Finance tickers.
 
-    NSE:INFY -> INFY.NS
-    BSE:INFY -> INFY.BO
-    INFY -> INFY.NS
-    APPL -> AAPL
-    )
+    NSE:INFY       -> INFY.NS
+    BSE:INFY       -> INFY.BO
+    NSE:NIFTY 50   -> ^NSEI
+    NSE:NIFTY BANK -> ^NSEBANK
+    INFY           -> INFY.NS
     """
+    # Special-case NSE index symbols that have different YF tickers
+    INDEX_MAP: dict = {
+        "NSE:NIFTY 50":       "^NSEI",
+        "NSE:NIFTY50":        "^NSEI",
+        "NSE:NIFTY":          "^NSEI",
+        "NSE:NIFTY BANK":     "^NSEBANK",
+        "NSE:BANKNIFTY":      "^NSEBANK",
+        "NSE:NIFTY MIDCAP":   "^NSEMDCP50",
+        "NSE:MIDCPNIFTY":     "^NSEMDCP50",
+        "NSE:FINNIFTY":       "^CNXFIN",
+        "NSE:VIX":            "^INDIAVIX",
+    }
+    upper = symbol.strip().upper()
+    if upper.endswith("USDT"):
+        return upper[:-4] + "-USD"
+        
+    if upper in INDEX_MAP:
+        return INDEX_MAP[upper]
+
     if ":" not in symbol:
-        #heuristic if it look like an indian ticker with no dots add .NS
+        # Heuristic: if it looks like an Indian ticker with no dots add .NS
         if symbol.isalpha() and len(symbol) <= 10 and symbol.upper() == symbol:
             return symbol + ".NS"
         return symbol
-    exchange , ticker = symbol.split(":" , 1)
-    suffix_map = {"NSE": ".NS" , "BSE" : ".BO" , "MCX": ".BO"}
-    return ticker + suffix_map.get(exchange.upper(), "")
+
+    exchange, ticker = symbol.split(":", 1)
+    suffix_map = {"NSE": ".NS", "BSE": ".BO", "MCX": ".BO"}
+    return ticker.strip() + suffix_map.get(exchange.strip().upper(), "")
 
  
 def kite_available() -> bool:
@@ -101,7 +121,70 @@ def _days_to_period(days: int, interval: str) -> str:
         return "1y"
     if days <= 730:
         return "2y"
-    return "5y"
+    if days <= 1825:
+        return "5y"
+    if days <= 3650:
+        return "10y"
+    if days <= 7300:
+        return "20y"
+    return "max"
+
+def _is_crypto_symbol(symbol: str) -> bool:
+    s = symbol.upper().strip()
+    if s.endswith("USDT") or s.startswith("P-") or s.startswith("C-") or s.startswith("F-"):
+        return True
+    return False
+
+def _fetch_delta_historical(symbol: str, interval: str = "day", days: int = 30) -> pd.DataFrame:
+    import requests
+    import time
+    end_time = int(time.time())
+    start_time = int(end_time - int(days) * 86400)
+    
+    res_map = {
+        'minute': '1m',
+        '1minute': '1m',
+        '3minute': '3m',
+        '5minute': '5m',
+        '15minute': '15m',
+        '30minute': '30m',
+        '60minute': '1h',
+        'day': '1d',
+        'week': '1w',
+    }
+    resolution = res_map.get(interval, '1d')
+    
+    params = {
+        'symbol': symbol,
+        'resolution': resolution,
+        'start': start_time,
+        'end': end_time
+    }
+    
+    try:
+        r = requests.get("https://api.delta.exchange/v2/history/candles", params=params, timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            if data.get('success') and data.get('result'):
+                candles = data['result']
+                df = pd.DataFrame(candles)
+                if not df.empty:
+                    df['time'] = pd.to_datetime(df['time'], unit='s')
+                    df = df.rename(columns={'time': 'date'})
+                    df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
+                    # sort ascending
+                    df = df.sort_values('date').reset_index(drop=True)
+                    return df
+    except Exception as e:
+        logger.error(f"Failed to fetch Delta candles for {symbol}: {e}")
+        
+    # Fallback to yfinance if Delta fails
+    yf_sym = symbol
+    if not symbol.endswith("-USD") and not symbol.endswith("-USDT"):
+        base = symbol.replace("USDT", "")
+        yf_sym = f"{base}-USD"
+    return _yf_historical(yf_sym, interval, days)
+
 # ═══════════════════════════════════════════════════════════════════════════
 # YAHOO FINANCE DATA LAYER
 # ═══════════════════════════════════════════════════════════════════════════
@@ -157,19 +240,26 @@ def _yf_quote(symbol: str) -> dict:
     yf_sym = _kite_to_yf(symbol)
     ticker = yf.Ticker(yf_sym)
     info   = ticker.fast_info
- 
+
+    def _safe(attr, default=None):
+        try:
+            val = getattr(info, attr, default)
+            return val if val == val else default  # NaN check
+        except Exception:
+            return default
+
     return {
         "symbol"          : symbol,
         "yf_symbol"       : yf_sym,
-        "last_price"      : info.last_price,
-        "previous_close"  : info.previous_close,
-        "open"            : info.open,
-        "day_high"        : info.day_high,
-        "day_low"         : info.day_low,
-        "volume"          : info.last_volume,
-        "market_cap"      : getattr(info, "market_cap", None),
-        "52w_high"        : info.fifty_two_week_high,
-        "52w_low"         : info.fifty_two_week_low,
+        "last_price"      : _safe("last_price"),
+        "previous_close"  : _safe("previous_close"),
+        "open"            : _safe("open"),
+        "day_high"        : _safe("day_high"),
+        "day_low"         : _safe("day_low"),
+        "volume"          : _safe("last_volume"),
+        "market_cap"      : _safe("market_cap"),
+        "52w_high"        : _safe("fifty_two_week_high"),
+        "52w_low"         : _safe("fifty_two_week_low"),
         "fetched_at"      : datetime.now().isoformat(),
         "source"          : "yahoo_finance",
     }
@@ -261,37 +351,115 @@ def get_quote(symbols: str) -> str:
     try:
         sym_list = [s.strip() for s in symbols.split(",") if s.strip()]
  
-        # ── Kite path ────────────────────────────────────────────────────
-        if kite_available():
+        # Split symbols
+        crypto_syms = [s for s in sym_list if _is_crypto_symbol(s)]
+        other_syms = [s for s in sym_list if s not in crypto_syms]
+
+        quotes = {}
+        errors = {}
+
+        # ── Delta Exchange path for crypto ───────────────────────────────
+        if crypto_syms:
             try:
-                quotes = get_kite().quote(sym_list)
-                result = {
-                    "source" : "kite",
-                    "quotes" : quotes,
-                    "fetched_at": datetime.now().isoformat(),
-                }
-                return json.dumps(result, default=str)
+                import requests
+                r = requests.get("https://api.delta.exchange/v2/tickers", timeout=5)
+                if r.status_code == 200:
+                    data = r.json()
+                    if data.get('success') and data.get('result'):
+                        tickers = {x['symbol']: x for x in data['result']}
+                        for sym in crypto_syms:
+                            t = tickers.get(sym)
+                            if t:
+                                price = t.get('close') or t.get('mark_price') or t.get('spot_price')
+                                quotes[sym] = {
+                                    "symbol": sym,
+                                    "last_price": float(price) if price else None,
+                                    "open": float(t.get('open')) if t.get('open') else None,
+                                    "day_high": float(t.get('high')) if t.get('high') else None,
+                                    "day_low": float(t.get('low')) if t.get('low') else None,
+                                    "volume": float(t.get('volume')) if t.get('volume') else None,
+                                    "source": "delta_exchange",
+                                    "fetched_at": datetime.now().isoformat()
+                                }
+                            else:
+                                errors[sym] = "Symbol not found in Delta Exchange"
+            except Exception as e:
+                for sym in crypto_syms:
+                    errors[sym] = f"Delta Exchange fetch failed: {e}"
+
+        # ── Kite path for remaining ──────────────────────────────────────
+        if other_syms and kite_available():
+            try:
+                kite_quotes = get_kite().quote(other_syms)
+                for sym, q in kite_quotes.items():
+                    quotes[sym] = {
+                        "symbol": sym,
+                        "last_price": q.get('last_price'),
+                        "open": q.get('ohlc', {}).get('open'),
+                        "day_high": q.get('ohlc', {}).get('high'),
+                        "day_low": q.get('ohlc', {}).get('low'),
+                        "volume": q.get('volume'),
+                        "source": "kite",
+                        "fetched_at": datetime.now().isoformat()
+                    }
+                # remove successfully fetched from other_syms
+                other_syms = [s for s in other_syms if s not in quotes]
             except Exception as e:
                 logger.warning("Kite quote failed, falling back to Yahoo Finance: %s", e)
  
-        # ── Yahoo Finance path ───────────────────────────────────────────
-        quotes = {}
-        errors = {}
-        for sym in sym_list:
-            try:
-                quotes[sym] = _yf_quote(sym)
-            except Exception as e:
-                errors[sym] = str(e)
+        # ── Yahoo Finance path for fallback/forex ────────────────────────
+        if other_syms:
+            for sym in other_syms:
+                try:
+                    q = _yf_quote(sym)
+                    quotes[sym] = q
+                except Exception as e:
+                    errors[sym] = str(e)
  
         return json.dumps({
-            "source"    : "yahoo_finance",
+            "source"    : "mixed",
             "quotes"    : quotes,
             "errors"    : errors,
             "fetched_at": datetime.now().isoformat(),
         }, default=str)
- 
+
     except Exception as e:
         return json.dumps({"error": str(e)})
+
+def _finnhub_historical(symbol: str, interval: str = "day", days: int = 30) -> pd.DataFrame:
+    """Fetch OHLCV data from Finnhub API."""
+    from src.trading_system.api_manager import api_manager
+    key = api_manager.finnhub_api_key
+    if not key:
+        raise ValueError("Finnhub API key not configured")
+        
+    import requests
+    import time
+    fh_sym = _kite_to_yf(symbol)
+    res_map = {'minute': '1', '1minute': '1', '5minute': '5', '15minute': '15', '30minute': '30', '60minute': '60', 'day': 'D', 'week': 'W', 'month': 'M'}
+    fh_res = res_map.get(interval, 'D')
+    end_t = int(time.time())
+    start_t = end_t - (int(days) * 86400)
+    fh_url = f"https://finnhub.io/api/v1/stock/candle?symbol={fh_sym}&resolution={fh_res}&from={start_t}&to={end_t}&token={key}"
+    
+    r = requests.get(fh_url, timeout=5)
+    r.raise_for_status()
+    d = r.json()
+    if d.get('s') == 'ok':
+        df = pd.DataFrame({
+            'date': pd.to_datetime(d['t'], unit='s'),
+            'open': d['o'],
+            'high': d['h'],
+            'low': d['l'],
+            'close': d['c'],
+            'volume': d['v']
+        })
+        # Strip tz info
+        if hasattr(df["date"].dtype, "tz") and df["date"].dtype.tz is not None:
+            df["date"] = df["date"].dt.tz_localize(None)
+        return df.sort_values("date").reset_index(drop=True)
+    else:
+        raise ValueError(f"Finnhub API returned status '{d.get('s')}'")
 
 def _fetch_historical_data(symbol: str, interval: str = "day", days: int = 30) -> pd.DataFrame:
     """Internal function to fetch historical data with caching."""
@@ -301,7 +469,6 @@ def _fetch_historical_data(symbol: str, interval: str = "day", days: int = 30) -
     cache_file = cache_dir / f"{symbol.replace(':', '_')}_{interval}_{days}d.parquet"
     
     # Simple caching: if file exists and was modified recently (e.g., today), load it.
-    # For now, we just check if it exists for the same parameter. In a production app, we'd check timestamps.
     if cache_file.exists():
         # Check if modified today
         mtime = datetime.fromtimestamp(cache_file.stat().st_mtime)
@@ -311,21 +478,51 @@ def _fetch_historical_data(symbol: str, interval: str = "day", days: int = 30) -
             except Exception as e:
                 logger.warning("Cache read failed, re-fetching: %s", e)
 
+    from src.trading_system.api_manager import api_manager
+    routed_api = api_manager.route_ohlcv_request(symbol, interval, days)
+    logger.info(f"Agent routing OHLCV request for {symbol} ({days} days) to: {routed_api}")
+
     df = None
-    if kite_available():
+    
+    if routed_api == 'delta':
         try:
-            kite = get_kite()
-            instrument = kite.ltp(symbol)[symbol]["instrument_token"]
-            to_date = datetime.now()
-            from_date = to_date - timedelta(days=days)
-            data = kite.historical_data(instrument, from_date, to_date, interval)
-            df = pd.DataFrame(data)
+            df = _fetch_delta_historical(symbol, interval, days)
+            if df is not None and not df.empty:
+                api_manager.track_call('delta')
         except Exception as e:
-            logger.warning("Kite failed, falling back to Yahoo: %s", e)
-            
+            logger.warning("Agent Delta fetch failed: %s", e)
+
+    elif routed_api == 'kite':
+        if kite_available():
+            try:
+                kite = get_kite()
+                instrument = kite.ltp(symbol)[symbol]["instrument_token"]
+                to_date = datetime.now()
+                from_date = to_date - timedelta(days=days)
+                data = kite.historical_data(instrument, from_date, to_date, interval)
+                df = pd.DataFrame(data)
+                if df is not None and not df.empty:
+                    api_manager.track_call('kite')
+            except Exception as e:
+                logger.warning("Agent Kite failed: %s", e)
+
+    elif routed_api == 'finnhub':
+        if api_manager.finnhub_api_key:
+            try:
+                df = _finnhub_historical(symbol, interval, days)
+                if df is not None and not df.empty:
+                    api_manager.track_call('finnhub')
+            except Exception as e:
+                logger.warning("Agent Finnhub failed: %s", e)
+
+    # Fallback to Yahoo Finance
     if df is None or df.empty:
+        if routed_api != 'yfinance':
+            logger.info(f"Agent routed API ({routed_api}) failed. Falling back to Yahoo Finance.")
         df = _yf_historical(symbol, interval, days)
-        
+        if df is not None and not df.empty:
+            api_manager.track_call('yfinance')
+
     if df is not None and not df.empty:
         df.to_parquet(cache_file)
         
@@ -894,6 +1091,10 @@ def create_portfolio_dashboard() -> str:
             subplot_titles=[
                 "Portfolio Allocation", "P&L per Stock",
                 "Day Change %", "Invested vs Current Value",
+            ],
+            specs=[
+                [{"type": "domain"}, {"type": "xy"}],
+                [{"type": "xy"},     {"type": "xy"}],
             ],
         )
  

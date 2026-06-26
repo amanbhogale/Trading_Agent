@@ -3,7 +3,7 @@
 # ============================================================
 
 # ---- Primary Data Source ----
-primary_source: yfinance        # Options: yfinance | alpha_vantage | ccxt | nsepy | stooq
+primary_source: stooq           # Options: yfinance | alpha_vantage | ccxt | nsepy | stooq
 
 # ---- Symbols to Trade ----
 symbols:
@@ -14,6 +14,9 @@ symbols:
     - SPY       # S&P 500 ETF — benchmark
     - QQQ       # NASDAQ 100 ETF
     - TSLA      # High-volatility momentum stock
+    - AMZN      # Amazon — e-commerce giant
+    - NVDA      # Nvidia — semiconductor growth
+    - META      # Meta — social media
   crypto:
     - BTC-USD   # Bitcoin
     - ETH-USD   # Ethereum
@@ -23,7 +26,7 @@ symbols:
     - ^NSEI      # Nifty 50 Index (Yahoo Finance)
 
 # ---- Time Range ----
-train_start: "2012-01-01"
+train_start: "2000-01-01"
 train_end:   "2023-12-31"
 test_start:  "2024-01-01"
 test_end:    "2026-05-31"

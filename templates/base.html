@@ -3,35 +3,100 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Trading System</title>
+    <title>Auxesis Trade</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     {% block extra_head %}{% endblock %}
 </head>
 <body>
     <nav class="sidebar">
-        <h2>AI Trading</h2>
+        <h2>Auxesis Trade</h2>
         <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">⚙️ Config</a>
         <a href="{{ url_for('chat') }}" class="nav-link {% if request.endpoint == 'chat' %}active{% endif %}">💬 Chat</a>
         <a href="{{ url_for('analysis') }}" class="nav-link {% if request.endpoint == 'analysis' %}active{% endif %}">📊 Analysis</a>
         <a href="{{ url_for('backtest') }}" class="nav-link {% if request.endpoint == 'backtest' %}active{% endif %}">🧪 Backtest</a>
         <a href="{{ url_for('portfolio') }}" class="nav-link {% if request.endpoint == 'portfolio' %}active{% endif %}">💼 Portfolio</a>
+        <a href="{{ url_for('news') }}" class="nav-link {% if request.endpoint == 'news' %}active{% endif %}">📰 News Feed</a>
     </nav>
     <main class="content">
+        <header class="top-header">
+            <div></div> <!-- Left space -->
+            <div class="mode-selector">
+                <span class="mode-label">📊 Market Mode:</span>
+                <select id="mode-select" class="mode-dropdown" onchange="changeMode(this.value)">
+                    <option value="equity">🇮🇳 Indian Equity</option>
+                    <option value="forex">💱 Forex (yfinance)</option>
+                    <option value="crypto">🪙 Crypto (Delta API)</option>
+                </select>
+            </div>
+        </header>
         {% block content %}{% endblock %}
     </main>
     <datalist id="tickers-datalist"></datalist>
     <script>
-        fetch('/api/tickers').then(r => r.json()).then(data => {
+        function loadTickersDatalist(mode) {
             const dl = document.getElementById('tickers-datalist');
-            if (data.tickers) {
-                data.tickers.forEach(t => {
-                    const opt = document.createElement('option');
-                    opt.value = t.symbol;
-                    opt.text = t.name + (t.sector ? ' | ' + t.sector : '');
-                    dl.appendChild(opt);
-                });
+            dl.innerHTML = ''; // Clear previous options
+            fetch('/api/tickers?mode=' + mode).then(r => r.json()).then(data => {
+                if (data.tickers) {
+                    data.tickers.forEach(t => {
+                        const opt = document.createElement('option');
+                        opt.value = t.symbol;
+                        opt.text = t.name + (t.sector ? ' | ' + t.sector : '');
+                        dl.appendChild(opt);
+                    });
+                }
+            });
+        }
+
+        function updateModeUI(mode) {
+            // Automatically find and adjust default symbol input placeholders and initial values based on mode
+            const inputs = document.querySelectorAll('input[placeholder*="e.g."], input[id="symbol"], input[id="symbol-input"]');
+            inputs.forEach(input => {
+                if (mode === 'equity') {
+                    input.placeholder = 'e.g. NSE:INFY';
+                    if (input.value === 'EURUSD=X' || input.value === 'BTCUSDT') {
+                        input.value = 'NSE:INFY';
+                    }
+                } else if (mode === 'forex') {
+                    input.placeholder = 'e.g. EURUSD=X';
+                    if (input.value === 'NSE:INFY' || input.value === 'BTCUSDT' || input.value.startsWith('NSE:')) {
+                        input.value = 'EURUSD=X';
+                    }
+                } else if (mode === 'crypto') {
+                    input.placeholder = 'e.g. BTCUSDT';
+                    if (input.value === 'NSE:INFY' || input.value === 'EURUSD=X' || input.value.startsWith('NSE:')) {
+                        input.value = 'BTCUSDT';
+                    }
+                }
+            });
+        }
+
+        function changeMode(mode) {
+            localStorage.setItem('trading_mode', mode);
+            loadTickersDatalist(mode);
+            updateModeUI(mode);
+            
+            // Emit a custom window event for pages to hook into
+            const event = new CustomEvent('tradingModeChanged', { detail: { mode: mode } });
+            window.dispatchEvent(event);
+        }
+
+        // Initialize mode on load
+        document.addEventListener('DOMContentLoaded', () => {
+            let mode = localStorage.getItem('trading_mode');
+            if (!mode) {
+                mode = 'equity';
+                localStorage.setItem('trading_mode', mode);
             }
+            
+            const modeSelect = document.getElementById('mode-select');
+            if (modeSelect) {
+                modeSelect.value = mode;
+            }
+            
+            loadTickersDatalist(mode);
+            updateModeUI(mode);
         });
     </script>
     {% block scripts %}{% endblock %}

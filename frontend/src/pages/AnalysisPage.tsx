@@ -1,36 +1,63 @@
 import { useState, useEffect } from 'react'
 import api from '../api'
+import { TickerSearch } from '../components/TickerSearch'
 
 
-const POPULAR_SYMBOLS = [
-  'NSE:INFY', 'NSE:RELIANCE', 'NSE:TCS', 'NSE:HDFC',
-  'NSE:WIPRO', 'NSE:BAJFINANCE', 'NSE:TATAMOTORS', 'NSE:ICICIBANK',
-]
+const POPULAR_SYMBOLS_BY_MODE: Record<string, string[]> = {
+  equity: [
+    'NSE:INFY', 'NSE:RELIANCE', 'NSE:TCS', 'NSE:HDFCBANK',
+    'NSE:WIPRO', 'NSE:BAJFINANCE', 'NSE:TATAMOTORS', 'NSE:ICICIBANK',
+  ],
+  forex: ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X', 'USDCAD=X', 'USDCHF=X'],
+  crypto: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'PAXGUSDT']
+}
 
-const SESSION_KEY = 'analysisPageState'
+// SESSION_KEY is derived dynamically per mode inside the component
 
-export default function AnalysisPage() {
-  const [symbol, setSymbol]       = useState('NSE:INFY')
-  const [loading, setLoading]     = useState(false)
-  const [result, setResult]       = useState<{ output: string; chart_url: string } | null>(null)
-  const [error, setError]         = useState('')
+export default function AnalysisPage({ mode }: { mode: string }) {
+  const [symbol,       setSymbol]       = useState('NSE:INFY')
+  const [loading,     setLoading]     = useState(false)
+  const [result,       setResult]       = useState<{ output: string; chart_url: string } | null>(null)
+  const [error,         setError]         = useState('')
+
+  const sessionKey = `analysisPageState_${mode}`
 
   // Restore from sessionStorage on mount
   useEffect(() => {
     try {
-      const saved = sessionStorage.getItem(SESSION_KEY)
+      const saved = sessionStorage.getItem(sessionKey)
       if (saved) {
         const s = JSON.parse(saved)
         if (s.symbol) setSymbol(s.symbol)
         if (s.result) setResult(s.result)
       }
     } catch {}
-  }, [])
+  }, [sessionKey])
+
+  // Auto-switch default symbol when mode changes
+  useEffect(() => {
+    const popular = POPULAR_SYMBOLS_BY_MODE[mode] || POPULAR_SYMBOLS_BY_MODE.equity
+    const defaultSym = popular[0]
+    
+    const isCrypto = symbol.endsWith("USDT") || symbol.startsWith("P-") || symbol.startsWith("C-") || symbol.startsWith("F-")
+    const isForex = symbol.endsWith("=X")
+    
+    if (mode === 'crypto' && !isCrypto) {
+      setSymbol(defaultSym)
+      setResult(null)
+    } else if (mode === 'forex' && !isForex) {
+      setSymbol(defaultSym)
+      setResult(null)
+    } else if (mode === 'equity' && (isCrypto || isForex)) {
+      setSymbol(defaultSym)
+      setResult(null)
+    }
+  }, [mode])
 
   // Persist to sessionStorage whenever result changes
   useEffect(() => {
-    if (result) sessionStorage.setItem(SESSION_KEY, JSON.stringify({ symbol, result }))
-  }, [result, symbol])
+    if (result) sessionStorage.setItem(sessionKey, JSON.stringify({ symbol, result }))
+  }, [result, symbol, sessionKey])
 
   async function runAnalysis() {
     if (!symbol.trim()) return
@@ -48,6 +75,8 @@ export default function AnalysisPage() {
     }
   }
 
+  const popularSymbols = POPULAR_SYMBOLS_BY_MODE[mode] || POPULAR_SYMBOLS_BY_MODE.equity
+
   return (
     <div className="page animate-fade-up">
       <div className="page-header">
@@ -56,13 +85,16 @@ export default function AnalysisPage() {
       </div>
 
       {/* Input Row */}
-      <div className="card" style={{ marginBottom: 18 }}>
+      <div className="card" style={{ marginBottom: 18, overflow: 'visible' }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div className="form-row" style={{ flex: 1, minWidth: 200, marginBottom: 0 }}>
             <label className="form-label">Symbol</label>
-            <input className="form-input" list="react-tickers-datalist" value={symbol} onChange={e => setSymbol(e.target.value)}
-              placeholder="e.g. NSE:INFY"
-              onKeyDown={e => e.key === 'Enter' && runAnalysis()} />
+            <TickerSearch 
+              value={symbol} onChange={setSymbol}
+              placeholder={mode === 'equity' ? 'NSE:INFY' : mode === 'forex' ? 'EURUSD=X' : 'BTCUSDT'}
+              onSelect={() => runAnalysis()} 
+              mode={mode}
+            />
           </div>
           <button className="btn btn-primary" onClick={runAnalysis} disabled={loading}>
             {loading ? <><span className="spinner" /> Analysing…</> : '🔍 Analyse'}
@@ -71,10 +103,10 @@ export default function AnalysisPage() {
 
         {/* Quick Symbols */}
         <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {POPULAR_SYMBOLS.map(sym => (
+          {popularSymbols.map(sym => (
             <button key={sym} className="btn btn-secondary btn-sm"
               onClick={() => { setSymbol(sym); }}>
-              {sym.replace('NSE:', '')}
+              {sym.replace('NSE:', '').replace('=X', '')}
             </button>
           ))}
         </div>

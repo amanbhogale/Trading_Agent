@@ -172,10 +172,9 @@ export default function LogsPage() {
                 gap: '0 12px',
                 padding: '4px 10px',
                 borderRadius: 4,
-                background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)',
+                background: LEVEL_BG[l.level] || (i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)'),
                 alignItems: 'flex-start',
                 lineHeight: 1.5,
-                background: LEVEL_BG[l.level] || 'transparent',
                 borderLeft: l.level === 'ERROR' || l.level === 'CRITICAL'
                   ? `2px solid ${LEVEL_COLORS[l.level]}`
                   : '2px solid transparent',

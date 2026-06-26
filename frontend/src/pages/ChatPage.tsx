@@ -9,19 +9,54 @@ interface Message {
   time: string
 }
 
-const QUICK_PROMPTS = [
-  'Analyse NSE:INFY and suggest a trade',
-  'What is the current market sentiment for RELIANCE?',
-  'Backtest SMA crossover on NSE:TCS for 365 days',
-  'Show me the RSI and MACD for NSE:HDFC',
-  'Compare momentum vs mean reversion strategy on WIPRO',
-]
+const QUICK_PROMPTS_BY_MODE: Record<string, string[]> = {
+  equity: [
+    'Analyse NSE:INFY and suggest a trade',
+    'What is the current market sentiment for RELIANCE?',
+    'Backtest SMA crossover on NSE:TCS for 365 days',
+    'Show me the RSI and MACD for NSE:HDFC',
+    'Compare momentum vs mean reversion strategy on WIPRO',
+  ],
+  forex: [
+    'Analyse EURUSD=X and suggest a trade',
+    'What is the current market sentiment for GBPUSD=X?',
+    'Backtest SMA crossover on EURUSD=X for 180 days',
+    'Show me the RSI and MACD for USDJPY=X',
+    'Compare momentum vs mean reversion strategy on AUDUSD=X',
+  ],
+  crypto: [
+    'Analyse BTCUSDT and suggest a trade',
+    'What is the current market sentiment for ETHUSDT?',
+    'Backtest SMA crossover on BTCUSDT for 90 days',
+    'Show me the RSI and MACD for SOLUSDT',
+    'Compare momentum vs mean reversion strategy on DOGEUSDT',
+  ]
+}
 
-export default function ChatPage() {
-  const [messages, setMessages]   = useState<Message[]>([])
+export default function ChatPage({ mode }: { mode: string }) {
+  const sessionKey = `agentChatState_${mode}`
+
+  const [messages, setMessages]   = useState<Message[]>(() => {
+    try {
+      const saved = sessionStorage.getItem(sessionKey)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed)) {
+          return parsed.filter((m: any) => m && typeof m === 'object' && m.role && m.content)
+        }
+      }
+      return []
+    } catch { return [] }
+  })
   const [input, setInput]         = useState('')
   const [loading, setLoading]     = useState(false)
   const historyRef = useRef<HTMLDivElement>(null)
+
+  // Persist messages to sessionStorage on change
+  useEffect(() => {
+    sessionStorage.setItem(sessionKey, JSON.stringify(messages))
+    scrollToBottom()
+  }, [messages, sessionKey])
 
   const scrollToBottom = () => {
     if (historyRef.current) {
@@ -43,7 +78,7 @@ export default function ChatPage() {
     setMessages(prev => [...prev, userMsg])
 
     try {
-      const res = await api.post('/chat', { message: text })
+      const res = await api.post('/chat', { message: text, mode })
       const aiMsg: Message = {
         role: 'assistant',
         content: '',
@@ -69,6 +104,8 @@ export default function ChatPage() {
     }
   }
 
+  const quickPrompts = QUICK_PROMPTS_BY_MODE[mode] || QUICK_PROMPTS_BY_MODE.equity || []
+
   return (
     <div className="page" style={{ padding: 0, display: 'flex', flexDirection: 'column', flex: 1, height: '100%' }}>
 
@@ -80,7 +117,7 @@ export default function ChatPage() {
             <p className="page-subtitle">Interact with the Orchestrator agent. It can analyse markets, backtest strategies, and execute trades.</p>
           </div>
           <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
-            {QUICK_PROMPTS.map(q => (
+            {quickPrompts.map(q => (
               <div key={q} className="card" style={{ cursor: 'pointer', padding: '12px 16px', fontSize: 13 }}
                 onClick={() => send(q)}>
                 <span style={{ color: 'var(--accent-blue-bright)', marginRight: 8 }}>→</span>
@@ -120,7 +157,7 @@ export default function ChatPage() {
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKey}
           disabled={loading}
-          placeholder="e.g. Analyse NSE:INFY and suggest a trade…"
+          placeholder={mode === 'equity' ? 'e.g. Analyse NSE:INFY and suggest a trade…' : mode === 'forex' ? 'e.g. Analyse EURUSD=X and suggest a trade…' : 'e.g. Analyse BTCUSDT and suggest a trade…'}
         />
         <button className="btn btn-primary" onClick={() => send()} disabled={loading || !input.trim()}>
           {loading ? <span className="spinner" /> : '➤ Send'}
