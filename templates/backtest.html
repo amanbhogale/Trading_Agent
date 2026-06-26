@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>🧪 Backtest</h1>
+<p class="subtitle">Evaluate trading strategies against historical data.</p>
+
+<div class="card grid-2">
+    <div>
+        <div class="form-group">
+            <label>Symbol</label>
+            <input type="text" id="symbol" list="tickers-datalist" value="NSE:INFY">
+        </div>
+        <div class="form-group">
+            <label>Strategy</label>
+            <select id="strategy">
+                <option value="sma_crossover">SMA Crossover</option>
+                <option value="rsi_mean_reversion">RSI Mean Reversion</option>
+                <option value="macd_trend">MACD Trend</option>
+                <option value="brownian_motion">Brownian Motion</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Days</label>
+            <input type="number" id="days" value="365">
+        </div>
+    </div>
+    <div>
+        <div class="form-group">
+            <label>Parameters (JSON)</label>
+            <input type="text" id="params" value='{"fast": 20, "slow": 50}'>
+        </div>
+        <br>
+        <button id="bt-btn" onclick="runBacktest()">▶️ Run Backtest</button>
+    </div>
+</div>
+
+<div id="results-area" style="display: none;">
+    <div class="card">
+        <div id="markdown-output" style="line-height: 1.6;"></div>
+    </div>
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <iframe id="chart-iframe" src="" style="height: 620px;"></iframe>
+    </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+    async function runBacktest() {
+        const btn = document.getElementById('bt-btn');
+        btn.disabled = true;
+        btn.innerText = 'Running...';
+        
+        const data = {
+            symbol: document.getElementById('symbol').value,
+            strategy: document.getElementById('strategy').value,
+            params: document.getElementById('params').value,
+            days: parseInt(document.getElementById('days').value)
+        };
+        
+        try {
+            const res = await fetch('/api/backtest', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            
+            document.getElementById('results-area').style.display = 'block';
+            document.getElementById('markdown-output').innerHTML = result.output;
+            document.getElementById('chart-iframe').src = result.chart_url;
+            
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+        
+        btn.disabled = false;
+        btn.innerText = '▶️ Run Backtest';
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Trading System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <nav class="sidebar">
+        <h2>AI Trading</h2>
+        <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">⚙️ Config</a>
+        <a href="{{ url_for('chat') }}" class="nav-link {% if request.endpoint == 'chat' %}active{% endif %}">💬 Chat</a>
+        <a href="{{ url_for('analysis') }}" class="nav-link {% if request.endpoint == 'analysis' %}active{% endif %}">📊 Analysis</a>
+        <a href="{{ url_for('backtest') }}" class="nav-link {% if request.endpoint == 'backtest' %}active{% endif %}">🧪 Backtest</a>
+        <a href="{{ url_for('portfolio') }}" class="nav-link {% if request.endpoint == 'portfolio' %}active{% endif %}">💼 Portfolio</a>
+    </nav>
+    <main class="content">
+        {% block content %}{% endblock %}
+    </main>
+    <datalist id="tickers-datalist"></datalist>
+    <script>
+        fetch('/api/tickers').then(r => r.json()).then(data => {
+            const dl = document.getElementById('tickers-datalist');
+            if (data.tickers) {
+                data.tickers.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t.symbol;
+                    opt.text = t.name + (t.sector ? ' | ' + t.sector : '');
+                    dl.appendChild(opt);
+                });
+            }
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

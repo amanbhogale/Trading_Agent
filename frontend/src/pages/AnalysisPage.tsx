@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import api from '../api'
 
 
@@ -7,11 +7,30 @@ const POPULAR_SYMBOLS = [
   'NSE:WIPRO', 'NSE:BAJFINANCE', 'NSE:TATAMOTORS', 'NSE:ICICIBANK',
 ]
 
+const SESSION_KEY = 'analysisPageState'
+
 export default function AnalysisPage() {
   const [symbol, setSymbol]       = useState('NSE:INFY')
   const [loading, setLoading]     = useState(false)
   const [result, setResult]       = useState<{ output: string; chart_url: string } | null>(null)
   const [error, setError]         = useState('')
+
+  // Restore from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(SESSION_KEY)
+      if (saved) {
+        const s = JSON.parse(saved)
+        if (s.symbol) setSymbol(s.symbol)
+        if (s.result) setResult(s.result)
+      }
+    } catch {}
+  }, [])
+
+  // Persist to sessionStorage whenever result changes
+  useEffect(() => {
+    if (result) sessionStorage.setItem(SESSION_KEY, JSON.stringify({ symbol, result }))
+  }, [result, symbol])
 
   async function runAnalysis() {
     if (!symbol.trim()) return
@@ -41,7 +60,7 @@ export default function AnalysisPage() {
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div className="form-row" style={{ flex: 1, minWidth: 200, marginBottom: 0 }}>
             <label className="form-label">Symbol</label>
-            <input className="form-input" value={symbol} onChange={e => setSymbol(e.target.value)}
+            <input className="form-input" list="react-tickers-datalist" value={symbol} onChange={e => setSymbol(e.target.value)}
               placeholder="e.g. NSE:INFY"
               onKeyDown={e => e.key === 'Enter' && runAnalysis()} />
           </div>
