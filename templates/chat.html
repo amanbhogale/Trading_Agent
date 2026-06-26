@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>💬 Chat</h1>
+<p class="subtitle">Interact with the Orchestrator agent.</p>
+
+<div class="card chat-container">
+    <div class="chat-history" id="chat-history">
+        <!-- Messages go here -->
+    </div>
+    <div class="chat-input-area">
+        <input type="text" id="chat-input" placeholder="e.g. Analyse NSE:INFY and suggest a trade" onkeypress="handleEnter(event)">
+        <button id="send-btn" onclick="sendMessage()">Send</button>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+    function handleEnter(e) {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    }
+    
+    async function sendMessage() {
+        const input = document.getElementById('chat-input');
+        const msg = input.value.trim();
+        if (!msg) return;
+        
+        input.value = '';
+        input.disabled = true;
+        document.getElementById('send-btn').disabled = true;
+        
+        const history = document.getElementById('chat-history');
+        
+        // Add User message
+        const userDiv = document.createElement('div');
+        userDiv.className = 'message user';
+        userDiv.innerText = msg;
+        history.appendChild(userDiv);
+        history.scrollTop = history.scrollHeight;
+        
+        try {
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message: msg})
+            });
+            const data = await res.json();
+            
+            const aiDiv = document.createElement('div');
+            aiDiv.className = 'message assistant';
+            aiDiv.innerHTML = data.response; // we assume backend parses markdown
+            history.appendChild(aiDiv);
+        } catch (e) {
+            const errDiv = document.createElement('div');
+            errDiv.className = 'message assistant';
+            errDiv.innerText = "❌ Error: " + e.message;
+            history.appendChild(errDiv);
+        }
+        
+        history.scrollTop = history.scrollHeight;
+        input.disabled = false;
+        document.getElementById('send-btn').disabled = false;
+        input.focus();
+    }
+</script>
+{% endblock %}

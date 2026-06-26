@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>📊 Analysis</h1>
+<p class="subtitle">Technical Analysis & Charting</p>
+
+<div class="card">
+    <div class="chat-input-area">
+        <input type="text" id="symbol-input" list="tickers-datalist" placeholder="e.g. NSE:INFY" value="NSE:INFY" onkeypress="if(event.key === 'Enter') runAnalysis()">
+        <button id="analyse-btn" onclick="runAnalysis()">🔍 Analyse</button>
+    </div>
+</div>
+
+<div id="results-area" style="display: none;">
+    <div class="card">
+        <div id="markdown-output" style="line-height: 1.6;"></div>
+    </div>
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <iframe id="chart-iframe" src=""></iframe>
+    </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+    async function runAnalysis() {
+        const symbol = document.getElementById('symbol-input').value.trim();
+        if (!symbol) return;
+        
+        const btn = document.getElementById('analyse-btn');
+        btn.disabled = true;
+        btn.innerText = 'Analyzing...';
+        
+        try {
+            const res = await fetch('/api/analysis', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({symbol: symbol})
+            });
+            const data = await res.json();
+            
+            document.getElementById('results-area').style.display = 'block';
+            document.getElementById('markdown-output').innerHTML = data.output;
+            document.getElementById('chart-iframe').src = data.chart_url;
+            
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+        
+        btn.disabled = false;
+        btn.innerText = '🔍 Analyse';
+    }
+</script>
+{% endblock %}

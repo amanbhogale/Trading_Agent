@@ -13,5 +13,19 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <datalist id="react-tickers-datalist"></datalist>
+    <script>
+      fetch('/api/tickers').then(r => r.json()).then(data => {
+        const dl = document.getElementById('react-tickers-datalist');
+        if (data.tickers) {
+          data.tickers.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t.symbol;
+            opt.text = t.name + (t.sector ? ' | ' + t.sector : '');
+            dl.appendChild(opt);
+          });
+        }
+      }).catch(e => console.error("Failed to fetch tickers for datalist", e));
+    </script>
   </body>
 </html>

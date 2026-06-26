@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import api from '../api'
 
 
@@ -14,40 +14,8 @@ const STRATEGIES = [
   { value: 'sentiment',             label: 'Sentiment Based',        defaultParams: '{"sentiment_threshold": 0.5}' },
 ]
 
-interface BacktestResult {
-  strategy: string
-  symbol: string
-  period_days: number
-  total_return_pct: number
-  buy_hold_pct: number
-  sharpe_ratio: number
-  max_drawdown_pct: number
-  win_rate_pct: number
-  num_trades: number
-  chart_url?: string
-  output?: string
-}
 
-function StatGrid({ result }: { result: BacktestResult }) {
-  const items = [
-    { label: 'Strategy Return', value: `${result.total_return_pct}%`, cls: result.total_return_pct >= 0 ? 'up' : 'down' },
-    { label: 'Buy & Hold', value: `${result.buy_hold_pct}%`, cls: result.buy_hold_pct >= 0 ? 'up' : 'down' },
-    { label: 'Sharpe Ratio', value: result.sharpe_ratio.toFixed(3), cls: result.sharpe_ratio >= 1 ? 'up' : result.sharpe_ratio < 0 ? 'down' : '' },
-    { label: 'Max Drawdown', value: `${result.max_drawdown_pct}%`, cls: 'down' },
-    { label: 'Win Rate', value: `${result.win_rate_pct}%`, cls: result.win_rate_pct >= 50 ? 'up' : 'down' },
-    { label: 'Num Trades', value: String(result.num_trades), cls: '' },
-  ]
-  return (
-    <div className="grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 16 }}>
-      {items.map(({ label, value, cls }) => (
-        <div key={label} className="card" style={{ padding: '14px 16px', border: '1px solid var(--border-subtle)' }}>
-          <div className="stat-item-label">{label}</div>
-          <div className={`stat-item-value ${cls}`}>{value}</div>
-        </div>
-      ))}
-    </div>
-  )
-}
+const SESSION_KEY = 'backtestPageState'
 
 export default function BacktestPage() {
   const [symbol,   setSymbol]   = useState('NSE:INFY')
@@ -55,10 +23,32 @@ export default function BacktestPage() {
   const [params,   setParams]   = useState('{"fast": 20, "slow": 50}')
   const [days,     setDays]     = useState(365)
   const [loading,  setLoading]  = useState(false)
-  const [result,   setResult]   = useState<BacktestResult | null>(null)
   const [chartUrl, setChartUrl] = useState('')
   const [output,   setOutput]   = useState('')
   const [error,    setError]    = useState('')
+
+  // Restore from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(SESSION_KEY)
+      if (saved) {
+        const s = JSON.parse(saved)
+        if (s.symbol)   setSymbol(s.symbol)
+        if (s.strategy) setStrategy(s.strategy)
+        if (s.params)   setParams(s.params)
+        if (s.days)     setDays(s.days)
+        if (s.output)   setOutput(s.output)
+        if (s.chartUrl) setChartUrl(s.chartUrl)
+      }
+    } catch {}
+  }, [])
+
+  // Persist to sessionStorage whenever results change
+  useEffect(() => {
+    if (output || chartUrl) {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ symbol, strategy, params, days, output, chartUrl }))
+    }
+  }, [output, chartUrl, symbol, strategy, params, days])
 
   function handleStrategyChange(val: string) {
     setStrategy(val)
@@ -69,7 +59,6 @@ export default function BacktestPage() {
   async function runBacktest() {
     setLoading(true)
     setError('')
-    setResult(null)
     setOutput('')
     setChartUrl('')
     try {
@@ -105,7 +94,7 @@ export default function BacktestPage() {
         <div className="grid" style={{ gridTemplateColumns: '1fr 2fr 1fr', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div className="form-row" style={{ marginBottom: 0 }}>
             <label className="form-label">Symbol</label>
-            <input className="form-input" value={symbol} onChange={e => setSymbol(e.target.value)} placeholder="NSE:INFY" />
+            <input className="form-input" list="react-tickers-datalist" value={symbol} onChange={e => setSymbol(e.target.value)} placeholder="NSE:INFY" />
           </div>
 
           <div className="form-row" style={{ marginBottom: 0 }}>

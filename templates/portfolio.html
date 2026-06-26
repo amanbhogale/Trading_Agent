@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>💼 Portfolio</h1>
+<p class="subtitle">Live Portfolio Dashboard (Requires Kite Authentication)</p>
+
+<div class="card">
+    <button id="refresh-btn" onclick="refreshPortfolio()">🔄 Refresh</button>
+</div>
+
+<div id="results-area" style="display: none;">
+    <div class="card">
+        <div id="markdown-output" style="line-height: 1.6;"></div>
+    </div>
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <iframe id="chart-iframe" src="" style="height: 820px;"></iframe>
+    </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+    async function refreshPortfolio() {
+        const btn = document.getElementById('refresh-btn');
+        btn.disabled = true;
+        btn.innerText = 'Refreshing...';
+        
+        try {
+            const res = await fetch('/api/portfolio', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            });
+            const result = await res.json();
+            
+            document.getElementById('results-area').style.display = 'block';
+            document.getElementById('markdown-output').innerHTML = result.output;
+            document.getElementById('chart-iframe').src = result.chart_url;
+            
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+        
+        btn.disabled = false;
+        btn.innerText = '🔄 Refresh';
+    }
+</script>
+{% endblock %}

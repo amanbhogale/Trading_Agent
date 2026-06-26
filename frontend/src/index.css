@@ -4,25 +4,25 @@
 
 :root {
   /* Color Palette */
-  --bg-deep: #060b14;
-  --bg-surface: #0d1520;
-  --bg-elevated: #111d2e;
-  --bg-card: #0f1a28;
-  --border-subtle: rgba(99, 179, 237, 0.08);
-  --border-mid: rgba(99, 179, 237, 0.15);
-  --border-accent: rgba(99, 179, 237, 0.35);
+  --bg-deep: #18171c; 
+  --bg-surface: #201f24;
+  --bg-elevated: #383d47;
+  --bg-card: #201f24;
+  --border-subtle: #383d47;
+  --border-mid: #516565;
+  --border-accent: #6b868e;
 
   /* Text */
-  --text-primary: #e8f1fb;
-  --text-secondary: #8ba7c7;
-  --text-muted: #4d6a8a;
+  --text-primary: #bcc6e5;
+  --text-secondary: #8ea6ba;
+  --text-muted: #6b868e;
 
   /* Accents */
-  --accent-blue: #3b82f6;
-  --accent-blue-bright: #60a5fa;
-  --accent-blue-glow: rgba(59, 130, 246, 0.2);
-  --accent-cyan: #06b6d4;
-  --accent-purple: #7c3aed;
+  --accent-blue: #516565;
+  --accent-blue-bright: #6b868e;
+  --accent-blue-glow: rgba(81, 101, 101, 0.2);
+  --accent-cyan: #8ea6ba;
+  --accent-purple: #3b4542;
 
   /* Status */
   --success: #10b981;
@@ -81,7 +81,7 @@ button { font-family: inherit; }
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent-blue), transparent);
+  background: linear-gradient(90deg, transparent, #383d47, transparent);
 }
 
 .sidebar-logo {
@@ -94,7 +94,7 @@ button { font-family: inherit; }
 
 .sidebar-logo-icon {
   width: 36px; height: 36px;
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+  background: linear-gradient(135deg, #201f24, #383d47, #201f24, #46454b);
   border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   font-size: 16px;
@@ -248,7 +248,7 @@ button { font-family: inherit; }
 .avatar {
   width: 34px; height: 34px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+  background: linear-gradient(135deg, #201f24, #383d47, #201f24, #46454b);
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 700;
   cursor: pointer;
@@ -553,7 +553,7 @@ button { font-family: inherit; }
 
 .message.user {
   align-self: flex-end;
-  background: linear-gradient(135deg, var(--accent-blue), #2563eb);
+  background: linear-gradient(135deg, #201f24, #383d47, #201f24, #46454b);
   color: white;
   border-bottom-right-radius: 4px;
 }

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>⚙️ Configuration</h1>
+<p class="subtitle">Connect your LLM and Kite API to start trading.</p>
+
+<div class="card grid-2">
+    <div>
+        <h3>LLM Provider</h3>
+        <form id="config-form">
+            <div class="form-group">
+                <label>Provider</label>
+                <select id="provider" name="provider" onchange="updateBaseUrl()">
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="google-gemini">Google Gemini</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Model</label>
+                <input type="text" id="model" name="model" value="nvidia/nemotron-3-super-120b-a12b:free">
+            </div>
+            <div class="form-group">
+                <label>API Key</label>
+                <input type="password" id="api_key" name="api_key">
+            </div>
+            <div class="form-group">
+                <label>Base URL</label>
+                <input type="text" id="base_url" name="base_url" value="https://openrouter.ai/api/v1">
+            </div>
+        </form>
+    </div>
+    <div>
+        <h3>Broker (Kite)</h3>
+        <div class="form-group">
+            <label>Kite API Key</label>
+            <input type="password" id="kite_key" name="kite_key" form="config-form">
+        </div>
+        <div class="form-group">
+            <label>Kite Access Token</label>
+            <input type="password" id="kite_token" name="kite_token" form="config-form">
+        </div>
+        <br>
+        <button type="button" onclick="testKite()">🧪 Test Kite Connection</button>
+        <div class="status-box" id="kite-test-out" style="margin-top: 10px; font-weight: bold;"></div>
+        <br>
+        <button type="button" onclick="connect()">🔌 Connect</button>
+        <div class="status-box" id="status-out">Not connected</div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+    const urls = {
+        "openrouter": "https://openrouter.ai/api/v1",
+        "openai": "",
+        "anthropic": "",
+        "google-gemini": ""
+    };
+    function updateBaseUrl() {
+        document.getElementById('base_url').value = urls[document.getElementById('provider').value];
+    }
+    
+    async function connect() {
+        const statusOut = document.getElementById('status-out');
+        statusOut.innerText = "Connecting...";
+        
+        const form = document.getElementById('config-form');
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+        
+        const res = await fetch('/api/connect', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        statusOut.innerText = result.message || result.error;
+    }
+
+    async function testKite() {
+        const kiteOut = document.getElementById('kite-test-out');
+        kiteOut.innerText = "Testing...";
+        
+        const form = document.getElementById('config-form');
+        const formData = new FormData(form);
+        const data = {
+            kite_key: formData.get('kite_key'),
+            kite_token: formData.get('kite_token')
+        };
+        
+        const res = await fetch('/api/test_kite', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        // The message may have markdown, but for this simple box we just show text
+        // Or we could parse it, but let's just use innerHTML since we return simple markdownish string
+        // Actually, we can just strip the markdown or render it. Let's render as text for now.
+        kiteOut.innerText = result.message.replace(/\*\*/g, '');
+    }
+</script>
+{% endblock %}
