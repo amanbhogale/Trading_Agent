@@ -19,7 +19,7 @@ import webbrowser
 from pathlib import Path
 from dotenv import load_dotenv, set_key
 
-load_dotenv()
+load_dotenv(override=True)
 
 # ── Read credentials ──────────────────────────────────────────────────────
 API_KEY    = os.getenv("KITE_API_KEY", "").strip()
@@ -82,6 +82,7 @@ if not env_path.exists():
 set_key(str(env_path), "KITE_ACCESS_TOKEN", access_token)
 
 print(f"\n✅  Authenticated as: {user_name} ({user_id})")
+print(f"   Access token: {access_token}")
 print(f"   Access token saved to .env → KITE_ACCESS_TOKEN")
 print(f"\n   You can now start the dashboard:")
 print(f"   python dashboard.py\n")

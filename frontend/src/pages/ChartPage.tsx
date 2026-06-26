@@ -10,6 +10,7 @@ import {
 } from 'lightweight-charts'
 import type { IChartApi, UTCTimestamp, ISeriesMarkersPluginApi } from 'lightweight-charts'
 import api from '../api'
+import { TickerSearch } from '../components/TickerSearch'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Candle {
@@ -28,12 +29,6 @@ interface Candle {
 interface WatchItem { symbol: string; name: string; ltp: number | null; prev: number | null; sector?: string }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const WATCHLIST_SYMS = [
-  'NSE:NIFTY 50','NSE:NIFTY BANK','NSE:RELIANCE','NSE:TCS',
-  'NSE:INFY','NSE:HDFCBANK','NSE:ICICIBANK','NSE:WIPRO',
-  'NSE:BAJFINANCE','NSE:TMCV','NSE:TMPV','NSE:SBIN','NSE:ADANIENT','NSE:ITC',
-]
-
 const TIMEFRAMES = [
   { label:'1m',  kite:'1minute',  days:7    },
   { label:'5m',  kite:'5minute',  days:14   },
@@ -56,11 +51,11 @@ const C = {
   vol:'rgba(81, 101, 101, 0.35)', rsi:'#fbbf24',
 }
 
-const SESSION_KEY = 'lwcChartState'
+// SESSION_KEY is now derived dynamically per mode inside the component
 
 // ─── Watchlist ────────────────────────────────────────────────────────────────
-function Watchlist({ items, active, onSelect }: {
-  items:WatchItem[]; active:string; onSelect:(s:string)=>void
+function Watchlist({ items, active, onSelect, mode }: {
+  items:WatchItem[]; active:string; onSelect:(s:string)=>void; mode:string
 }) {
   const [query, setQuery] = useState('')
   
@@ -69,6 +64,12 @@ function Watchlist({ items, active, onSelect }: {
     (item.name && item.name.toLowerCase().includes(query.toLowerCase())) ||
     (item.sector && item.sector.toLowerCase().includes(query.toLowerCase()))
   )
+
+  const getWatchlistHeader = () => {
+    if (mode === 'crypto') return 'Crypto Watchlist'
+    if (mode === 'forex') return 'Forex Watchlist'
+    return 'Equity Watchlist'
+  }
 
   return (
     <aside style={{
@@ -81,7 +82,7 @@ function Watchlist({ items, active, onSelect }: {
         color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em',
         borderBottom:`1px solid ${C.border}`,
       }}>
-        Classified Watchlist (Tata Split)
+        {getWatchlistHeader()}
       </div>
       <div style={{ padding: '8px 12px', borderBottom:`1px solid ${C.border}` }}>
         <input 
@@ -133,10 +134,10 @@ function Watchlist({ items, active, onSelect }: {
               </div>
               <div style={{ textAlign:'right', flexShrink: 0 }}>
                 <div style={{ fontSize:12, fontWeight:600,
-                  color: ltp ? (up ? C.up : C.down) : C.muted }}>
-                  {ltp !== null ? `₹${ltp.toFixed(ltp<100?3:2)}` : '—'}
+                  color: ltp != null ? (up ? C.up : C.down) : C.muted }}>
+                  {ltp != null ? `${mode === 'equity' ? '₹' : '$'}${ltp.toFixed(ltp<100?3:2)}` : '—'}
                 </div>
-                {pct !== null && (
+                {pct != null && (
                   <div style={{ fontSize:10, color: up ? C.up : C.down }}>
                     {up?'▲':'▼'} {Math.abs(pct).toFixed(2)}%
                   </div>
@@ -151,7 +152,7 @@ function Watchlist({ items, active, onSelect }: {
 }
 
 // ─── Main Chart ───────────────────────────────────────────────────────────────
-export default function ChartPage() {
+export default function ChartPage({ mode }: { mode: string }) {
   const mainRef   = useRef<HTMLDivElement>(null)
   const rsiRef    = useRef<HTMLDivElement>(null)
 
@@ -162,12 +163,39 @@ export default function ChartPage() {
   // LWC v5: markers are managed via createSeriesMarkers() plugin, not series.setMarkers()
   const markersPluginRef = useRef<ISeriesMarkersPluginApi<any> | null>(null)
 
+  const sessionKey = `lwcChartState_${mode}`
+
   const [symbol, setSymbol] = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem(SESSION_KEY)||'{}').symbol||'NSE:INFY' }
+    try { 
+      const parsed = JSON.parse(sessionStorage.getItem(sessionKey)||'{}')
+      return (parsed && typeof parsed.symbol === 'string') ? parsed.symbol : 'NSE:INFY'
+    }
     catch { return 'NSE:INFY' }
   })
+
+  // Auto-switch symbol when mode changes
+  useEffect(() => {
+    const isCrypto = symbol.endsWith("USDT") || symbol.startsWith("P-") || symbol.startsWith("C-") || symbol.startsWith("F-")
+    const isForex = symbol.endsWith("=X")
+    
+    if (mode === 'crypto' && !isCrypto) {
+      setSymbol('BTCUSDT')
+      setSearch('BTCUSDT')
+    } else if (mode === 'forex' && !isForex) {
+      setSymbol('EURUSD=X')
+      setSearch('EURUSD=X')
+    } else if (mode === 'equity' && (isCrypto || isForex)) {
+      setSymbol('NSE:INFY')
+      setSearch('NSE:INFY')
+    }
+  }, [mode])
+
   const [tfIdx, setTfIdx] = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem(SESSION_KEY)||'{}').tfIdx??5 }
+    try { 
+      const parsed = JSON.parse(sessionStorage.getItem(sessionKey)||'{}')
+      const idx = parsed?.tfIdx
+      return (typeof idx === 'number' && idx >= 0 && idx < TIMEFRAMES.length) ? idx : 5
+    }
     catch { return 5 }
   })
   const [inds, setInds] = useState<Record<string,boolean>>({
@@ -177,9 +205,7 @@ export default function ChartPage() {
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState('')
   const [lastC,     setLastC]     = useState<Candle|null>(null)
-  const [watchItems,setWatchItems] = useState<WatchItem[]>(
-    WATCHLIST_SYMS.map(s=>({ symbol:s, name:s.split(':')[-1], ltp:null, prev:null }))
-  )
+  const [watchItems,setWatchItems] = useState<WatchItem[]>([])
   const [search, setSearch] = useState('')
 
   // ─── Execution Panel States ───────────────────────────────────────────────
@@ -206,8 +232,8 @@ export default function ChartPage() {
   const [nextDayPred, setNextDayPred] = useState<any>(null)
 
   useEffect(() => {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ symbol, tfIdx }))
-  }, [symbol, tfIdx])
+    sessionStorage.setItem(sessionKey, JSON.stringify({ symbol, tfIdx }))
+  }, [symbol, tfIdx, sessionKey])
 
   // ── Fetch Tickers Classification ─────────────────────────────────────────────
   const fetchTickers = useCallback(async () => {
@@ -253,23 +279,32 @@ export default function ChartPage() {
 
   useEffect(() => { fetchCandles(symbol, TIMEFRAMES[tfIdx]) }, [symbol, tfIdx, fetchCandles])
 
-  // ── Fetch watchlist LTPs ────────────────────────────────────────────────────
-  const fetchLtps = useCallback(async () => {
+  // ── Fetch watchlist ─────────────────────────────────────────────────────────
+  const fetchWatchlist = useCallback(async () => {
     try {
-      const res = await api.post('/ltp', { symbols: WATCHLIST_SYMS })
-      const q   = res.data.quotes || {}
-      setWatchItems(prev => prev.map(item => {
-        const hit = q[item.symbol]
-        return { ...item, prev:item.ltp, ltp: hit?.ltp ?? item.ltp }
-      }))
+      const res = await api.get(`/watchlist?mode=${mode}`)
+      if (res.data && res.data.watchlist) {
+        setWatchItems(prev => {
+          const prevLtpMap = new Map<string, number | null>()
+          prev.forEach(x => prevLtpMap.set(x.symbol, x.ltp))
+          
+          return res.data.watchlist.map((item: any) => ({
+            symbol: item.symbol,
+            name: item.name || item.symbol,
+            ltp: item.ltp ?? prevLtpMap.get(item.symbol) ?? null,
+            prev: prevLtpMap.get(item.symbol) ?? item.ltp ?? null,
+            sector: item.sector
+          }))
+        })
+      }
     } catch {}
-  }, [])
+  }, [mode])
 
   useEffect(() => {
-    fetchLtps()
-    const id = setInterval(fetchLtps, 30_000)
+    fetchWatchlist()
+    const id = setInterval(fetchWatchlist, 30_000)
     return () => clearInterval(id)
-  }, [fetchLtps])
+  }, [fetchWatchlist])
 
   // ── Build charts whenever candles or indicator flags change ─────────────────
   useEffect(() => {
@@ -484,6 +519,7 @@ export default function ChartPage() {
         product: variety === 'regular' ? 'CNC' : variety === 'intraday' ? 'MIS' : 'NRML',
         variety,
         trigger_price: variety === 'gtt' ? parseFloat(triggerPrice) : 0,
+        ltp: lastC ? lastC.close : 0,
         is_option: isOption,
         option_type: optionType,
         strike_price: isOption ? strikePrice : null,
@@ -506,7 +542,7 @@ export default function ChartPage() {
   return (
     <div style={{ display:'flex', height:'calc(100vh - 130px)', overflow:'hidden' }}>
 
-      <Watchlist items={watchItems} active={symbol} onSelect={setSymbol} />
+      <Watchlist items={watchItems} active={symbol} onSelect={setSymbol} mode={mode} />
 
       <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:C.bg }}>
 
@@ -515,19 +551,20 @@ export default function ChartPage() {
           display:'flex', alignItems:'center', gap:8, padding:'7px 14px',
           background:C.bgPanel, borderBottom:`1px solid ${C.border}`,
           flexWrap:'wrap', flexShrink:0, minHeight:48,
+          position: 'relative', zIndex: 100
         }}>
           {/* Symbol + OHLC */}
           <div style={{
             background:C.bgCard, border:`1px solid rgba(99,179,237,0.3)`,
             borderRadius:8, padding:'4px 14px', fontWeight:800, fontSize:14, color:'#60a5fa',
           }}>
-            {symbol.replace('NSE:','')}
+            {symbol.replace('NSE:','').replace('=X','')}
           </div>
 
           {lastC && (
             <div style={{ display:'flex', gap:10, fontSize:12, alignItems:'center' }}>
               <span style={{ fontWeight:700, color: lastC.close>=lastC.open ? C.up : C.down }}>
-                ₹{lastC.close.toFixed(2)}
+                {mode === 'equity' ? '₹' : '$'}{lastC.close.toFixed(2)}
               </span>
               {chg !== null && (
                 <span style={{ color: chg>=0 ? C.up : C.down }}>
@@ -573,15 +610,16 @@ export default function ChartPage() {
 
           {/* Search */}
           <div style={{ marginLeft:'auto', display:'flex', gap:6 }}>
-            <input
-              value={search} onChange={e=>setSearch(e.target.value)}
-              onKeyDown={e=>{ if(e.key==='Enter' && search.trim()) jumpSymbol(search) }}
+            <TickerSearch
+              value={search} onChange={setSearch}
+              onSelect={jumpSymbol}
               placeholder="Symbol… (Enter)"
               style={{
                 background:C.bgCard, border:`1px solid ${C.border}`,
                 borderRadius:6, padding:'5px 10px', fontSize:12,
-                color:C.text, outline:'none', width:145,
+                color:C.text, outline:'none', width:210,
               }}
+              mode={mode}
             />
             <button onClick={()=>fetchCandles(symbol, TIMEFRAMES[tfIdx])} style={{
               background:C.bgCard, border:`1px solid ${C.border}`,
@@ -765,66 +803,68 @@ export default function ChartPage() {
           </div>
 
           {/* Options Contract Setup (Collapsible) */}
-          <div style={{ background: 'rgba(99,179,237,0.02)', border: `1px dashed ${C.border}`, borderRadius: 8, padding: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>Option F&O Contract</span>
-              <input
-                type="checkbox"
-                checked={isOption}
-                onChange={e => setIsOption(e.target.checked)}
-                style={{ width: 14, height: 14, cursor: 'pointer' }}
-              />
-            </div>
-            {isOption && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 9, color: C.muted, display: 'block', marginBottom: '3px' }}>STRIKE PRICE</label>
+          {mode === 'equity' && (
+            <div style={{ background: 'rgba(99,179,237,0.02)', border: `1px dashed ${C.border}`, borderRadius: 8, padding: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>Option F&O Contract</span>
+                <input
+                  type="checkbox"
+                  checked={isOption}
+                  onChange={e => setIsOption(e.target.checked)}
+                  style={{ width: 14, height: 14, cursor: 'pointer' }}
+                />
+              </div>
+              {isOption && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 9, color: C.muted, display: 'block', marginBottom: '3px' }}>STRIKE PRICE</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 900"
+                        value={strikePrice}
+                        onChange={e => setStrikePrice(e.target.value)}
+                        style={{
+                          width: '100%', background: C.bgCard, border: `1px solid ${C.border}`,
+                          borderRadius: 6, padding: '6px', fontSize: 11, color: C.text, boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 9, color: C.muted, display: 'block', marginBottom: '3px' }}>OPTION TYPE</label>
+                      <select
+                        value={optionType}
+                        onChange={e => setOptionType(e.target.value as any)}
+                        style={{
+                          width: '100%', background: C.bgCard, border: `1px solid ${C.border}`,
+                          borderRadius: 6, padding: '6px', fontSize: 11, color: C.text, boxSizing: 'border-box'
+                        }}
+                      >
+                        <option value="CE">CALL (CE)</option>
+                        <option value="PE">PUT (PE)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 9, color: C.muted, display: 'block', marginBottom: '3px' }}>EXPIRY (e.g. Monthly/Weekly)</label>
                     <input
                       type="text"
-                      placeholder="e.g. 900"
-                      value={strikePrice}
-                      onChange={e => setStrikePrice(e.target.value)}
+                      placeholder="e.g. 26JUN"
+                      value={expiry}
+                      onChange={e => setExpiry(e.target.value)}
                       style={{
                         width: '100%', background: C.bgCard, border: `1px solid ${C.border}`,
                         borderRadius: 6, padding: '6px', fontSize: 11, color: C.text, boxSizing: 'border-box'
                       }}
                     />
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 9, color: C.muted, display: 'block', marginBottom: '3px' }}>OPTION TYPE</label>
-                    <select
-                      value={optionType}
-                      onChange={e => setOptionType(e.target.value as any)}
-                      style={{
-                        width: '100%', background: C.bgCard, border: `1px solid ${C.border}`,
-                        borderRadius: 6, padding: '6px', fontSize: 11, color: C.text, boxSizing: 'border-box'
-                      }}
-                    >
-                      <option value="CE">CALL (CE)</option>
-                      <option value="PE">PUT (PE)</option>
-                    </select>
+                  <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 600, marginTop: '4px' }}>
+                    Synthesized Contract: {symbol.replace('NSE:', '')}{expiry}{strikePrice}{optionType}
                   </div>
                 </div>
-                <div>
-                  <label style={{ fontSize: 9, color: C.muted, display: 'block', marginBottom: '3px' }}>EXPIRY (e.g. Monthly/Weekly)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 26JUN"
-                    value={expiry}
-                    onChange={e => setExpiry(e.target.value)}
-                    style={{
-                      width: '100%', background: C.bgCard, border: `1px solid ${C.border}`,
-                      borderRadius: 6, padding: '6px', fontSize: 11, color: C.text, boxSizing: 'border-box'
-                    }}
-                  />
-                </div>
-                <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 600, marginTop: '4px' }}>
-                  Synthesized Contract: {symbol.replace('NSE:', '')}{expiry}{strikePrice}{optionType}
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           {/* Form parameters */}
           <div style={{ display: 'flex', gap: 8 }}>
@@ -875,16 +915,43 @@ export default function ChartPage() {
 
           {variety === 'gtt' && (
             <div>
-              <label style={{ fontSize: 9, color: C.muted, display: 'block', marginBottom: '3px' }}>GTT TRIGGER PRICE (₹)</label>
-              <input
-                type="text"
-                value={triggerPrice}
-                onChange={e => setTriggerPrice(e.target.value)}
-                style={{
-                  width: '100%', background: C.bgCard, border: `1px solid ${C.border}`,
-                  borderRadius: 6, padding: '6px', fontSize: 11, color: C.text, boxSizing: 'border-box'
-                }}
-              />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ flex: 2 }}>
+                  <label style={{ fontSize: 9, color: C.muted, display: 'block', marginBottom: '3px' }}>GTT TRIGGER PRICE (₹)</label>
+                  <input
+                    type="text"
+                    value={triggerPrice}
+                    onChange={e => setTriggerPrice(e.target.value)}
+                    style={{
+                      width: '100%', background: C.bgCard, border: `1px solid ${C.border}`,
+                      borderRadius: 6, padding: '6px', fontSize: 11, color: C.text, boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 9, color: C.muted, display: 'block', marginBottom: '3px' }}>% FROM LTP</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder="e.g. -5"
+                    onChange={e => {
+                      const pct = parseFloat(e.target.value);
+                      if (!isNaN(pct) && lastC) {
+                        const newPrice = lastC.close * (1 + pct / 100);
+                        setTriggerPrice(newPrice.toFixed(2));
+                        if (orderType === 'LIMIT') setPrice(newPrice.toFixed(2));
+                      }
+                    }}
+                    style={{
+                      width: '100%', background: C.bgCard, border: `1px solid ${C.border}`,
+                      borderRadius: 6, padding: '6px', fontSize: 11, color: C.text, boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              </div>
+              <div style={{ fontSize: 9, color: C.muted, marginTop: '6px', lineHeight: '1.2' }}>
+                Note: Trigger price must cross the current price (strictly above or below LTP). It cannot be exactly equal.
+              </div>
             </div>
           )}
 

@@ -19,8 +19,8 @@ lstm:
     - ema_50
     - obv
     - vwap
-  hidden_size: 64              # LSTM hidden units per layer
-  num_layers: 2                # Stacked LSTM depth
+  hidden_size: 256             # LSTM hidden units per layer
+  num_layers: 4                # Stacked LSTM depth
   dropout: 0.2                 # Recurrent dropout rate
   output_size: 3               # Classes: 0=Hold, 1=Buy, 2=Sell
   batch_size: 64
@@ -51,7 +51,7 @@ dqn:
   dueling_dqn: true            # Use Dueling architecture
   priority_replay: true        # Prioritized Experience Replay (PER)
   n_step_returns: 3            # N-step TD returns
-  training_episodes: 500
+  training_episodes: 700
   max_steps_per_episode: 1000
 
 # ---- Training Environment ----

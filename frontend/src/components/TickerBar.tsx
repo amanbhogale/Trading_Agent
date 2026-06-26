@@ -1,229 +1,135 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import api from '../api'
 
-
-const TICKER_SYMBOLS = [
-  'NSE:INFY', 'NSE:RELIANCE', 'NSE:TCS', 'NSE:HDFCBANK',
-  'NSE:WIPRO', 'NSE:BAJFINANCE', 'NSE:TATAMOTORS', 'NSE:ICICIBANK',
-  'NSE:AXISBANK', 'NSE:SBIN',
-]
-
-interface TickerItem {
-  symbol:     string
-  price:      number
-  prevClose:  number
-  changePct:  number
-  change:     number
-  source:     'live' | 'last_known' | 'simulated'
+const MODE_SYMBOLS: Record<string, string[]> = {
+  equity: [
+    'NSE:NIFTY 50', 'NSE:NIFTY BANK',
+    'NSE:RELIANCE', 'NSE:TCS', 'NSE:INFY',
+    'NSE:HDFCBANK', 'NSE:WIPRO', 'NSE:BAJFINANCE',
+    'NSE:TMCV', 'NSE:TMPV', 'NSE:ICICIBANK', 'NSE:SBIN',
+  ],
+  forex: ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X', 'USDCAD=X', 'USDCHF=X'],
+  crypto: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'PAXGUSDT']
 }
 
-interface MarketStatus {
-  is_open:          boolean
-  current_time_ist: string
-  day:              string
-  next_open:        string | null
+interface Tick { symbol: string; ltp: number | null; prev: number | null }
+
+function fmt(n: number) {
+  return n < 100 ? n.toFixed(3) : n < 10000 ? n.toFixed(2) : n.toFixed(1)
 }
 
-// ── IST market hours check (client-side) ─────────────────────────────────────
-function useMarketStatus() {
-  const [status, setStatus] = useState<MarketStatus | null>(null)
+export default function TickerBar({ mode }: { mode: string }) {
+  const currentSymbols = MODE_SYMBOLS[mode] || MODE_SYMBOLS.equity
+  const [ticks, setTicks]         = useState<Tick[]>(() => currentSymbols.map(s => ({ symbol: s, ltp: null, prev: null })))
+  const [isOpen, setIsOpen]       = useState(false)
+  const [timeStr, setTimeStr]     = useState('')
 
-  // Fetch from backend (accurate server-side check)
-  async function fetchStatus() {
-    try {
-      const res = await api.get('/market_status')
-      setStatus(res.data)
-    } catch {
-      // Fallback: compute locally in IST
-      const now = new Date()
-      const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
-      const h = ist.getHours(), m = ist.getMinutes(), d = ist.getDay()
-      const minOfDay = h * 60 + m
-      const is_open  = d >= 1 && d <= 5 && minOfDay >= 555 && minOfDay <= 930  // 9:15–15:30
-      setStatus({
-        is_open,
-        current_time_ist: `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`,
-        day: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d],
-        next_open: is_open ? null : '09:15 IST',
-      })
-    }
-  }
-
+  // Market status
   useEffect(() => {
-    fetchStatus()
-    const id = setInterval(fetchStatus, 60_000)  // re-check every minute
+    async function check() {
+      try {
+        const res = await api.get(`/market_status?mode=${mode}`)
+        setIsOpen(res.data.is_open)
+        setTimeStr(res.data.current_time_ist)
+      } catch {
+        const now = new Date()
+        const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+        const h = ist.getHours(), m = ist.getMinutes(), d = ist.getDay()
+        const mins = h * 60 + m
+        if (mode === 'crypto') {
+          setIsOpen(true)
+        } else if (mode === 'forex') {
+          // Forex is Sun 22:00 GMT to Fri 22:00 GMT
+          setIsOpen(d >= 1 && d <= 5)
+        } else {
+          setIsOpen(d >= 1 && d <= 5 && mins >= 555 && mins <= 930)
+        }
+        setTimeStr(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`)
+      }
+    }
+    check()
+    const id = setInterval(check, 60_000)
     return () => clearInterval(id)
-  }, [])
+  }, [mode])
 
-  return status
-}
+  // Reset ticks state when mode/symbols change
+  useEffect(() => {
+    setTicks(currentSymbols.map(s => ({ symbol: s, ltp: null, prev: null })))
+  }, [mode])
 
-// ── Parse backend quote response ─────────────────────────────────────────────
-function parseQuotes(raw: any, symbols: string[]): Record<string, Partial<TickerItem>> {
-  if (!raw || raw.error) return {}
-  const out: Record<string, Partial<TickerItem>> = {}
-  const quotes = raw.quotes || {}
-
-  if (raw.source === 'kite') {
-    for (const sym of symbols) {
-      const q = quotes[sym]
-      if (!q) continue
-      const price    = q.last_price ?? q.ohlc?.close ?? 0
-      const prevClose = q.ohlc?.close ?? price
-      out[sym] = { price, prevClose, source: 'live' }
-    }
-  } else {
-    // Yahoo Finance shape
-    for (const sym of symbols) {
-      const q = quotes[sym]
-      if (!q) continue
-      const price     = q.price ?? q.regularMarketPrice ?? 0
-      const prevClose = q.previousClose ?? q.regularMarketPreviousClose ?? price
-      out[sym] = { price, prevClose, source: 'last_known' }
-    }
-  }
-  return out
-}
-
-export default function TickerBar() {
-  const marketStatus = useMarketStatus()
-  const [tickers, setTickers]       = useState<TickerItem[]>([])
-  const [lastFetch, setLastFetch]   = useState<Date | null>(null)
-  const prevRef = useRef<Record<string, number>>({})
-
-  // ── Fetch real prices ─────────────────────────────────────────────────────
-  async function fetchPrices() {
+  // Fetch LTPs
+  const fetchLtps = useCallback(async () => {
     try {
-      const res = await api.post('/quotes', {
-        symbols: TICKER_SYMBOLS.join(','),
-      })
-      const parsed = parseQuotes(res.data, TICKER_SYMBOLS)
-      setLastFetch(new Date())
+      const res = await api.post('/ltp', { symbols: currentSymbols })
+      const q   = res.data.quotes || {}
+      setTicks(prev => prev.map(t => {
+        const hit = q[t.symbol]
+        return { ...t, prev: t.ltp, ltp: hit?.ltp ?? t.ltp }
+      }))
+    } catch {}
+  }, [currentSymbols])
 
-      setTickers(prev => {
-        const updated: TickerItem[] = TICKER_SYMBOLS.map(sym => {
-          const q      = parsed[sym]
-          const price  = q?.price ?? prev.find(p => p.symbol === sym)?.price ?? 0
-          const prev0  = prevRef.current[sym] ?? price
-          const prevClose = q?.prevClose ?? prev.find(p => p.symbol === sym)?.prevClose ?? price
-          const change    = price - prevClose
-          const changePct = prevClose !== 0 ? (change / prevClose) * 100 : 0
-          prevRef.current[sym] = price
-          return {
-            symbol:    sym,
-            price,
-            prevClose,
-            change,
-            changePct,
-            source: q?.source ?? 'last_known',
-          }
-        })
-        return updated
-      })
-    } catch {
-      // If backend unreachable, keep existing tickers and show simulated flicker only if market open
-    }
-  }
-
-  // ── Simulated micro-tick when market is open ──────────────────────────────
-  function applyMicroTick() {
-    setTickers(prev =>
-      prev.map(t => {
-        if (!marketStatus?.is_open) return t  // freeze when closed
-        const noise     = (Math.random() - 0.5) * t.price * 0.0008
-        const newPrice  = Math.max(0.01, t.price + noise)
-        const change    = newPrice - t.prevClose
-        const changePct = t.prevClose !== 0 ? (change / t.prevClose) * 100 : 0
-        return { ...t, price: newPrice, change, changePct, source: 'live' }
-      })
-    )
-  }
-
-  // Initial fetch + periodic real-data refresh
   useEffect(() => {
-    fetchPrices()
-    // Refresh every 15s if market open, every 5min if closed
-    const interval = setInterval(() => {
-      fetchPrices()
-    }, marketStatus?.is_open ? 15_000 : 300_000)
-    return () => clearInterval(interval)
-  }, [marketStatus?.is_open])
-
-  // Micro-tick visual animation — only during market hours
-  useEffect(() => {
-    if (!marketStatus?.is_open) return
-    const id = setInterval(applyMicroTick, 1_500)
+    fetchLtps()
+    const id = setInterval(fetchLtps, isOpen ? 15_000 : 300_000)
     return () => clearInterval(id)
-  }, [marketStatus?.is_open, tickers.length])
+  }, [isOpen, fetchLtps])
 
-  const isOpen = marketStatus?.is_open ?? false
+  const getModeLabel = () => {
+    if (mode === 'crypto') return 'CRYPTO'
+    if (mode === 'forex') return 'FOREX'
+    return 'NSE'
+  }
+
+  const getCurrencyPrefix = () => {
+    return mode === 'equity' ? '₹' : '$'
+  }
 
   return (
-    <div className="ticker-bar" style={{ userSelect: 'none', position: 'relative' }}>
-
-      {/* Market status badge */}
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 0,
+      background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)',
+      height: 36, overflow: 'hidden', padding: '0 14px', flexShrink: 0,
+    }}>
+      {/* Status badge */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
-        paddingRight: 20, borderRight: '1px solid var(--border-subtle)',
-        marginRight: 4, flexShrink: 0,
+        paddingRight: 14, borderRight: '1px solid var(--border-subtle)',
+        marginRight: 10, flexShrink: 0,
       }}>
         <span style={{
           width: 7, height: 7, borderRadius: '50%',
           background: isOpen ? 'var(--success)' : 'var(--danger)',
-          boxShadow: isOpen ? '0 0 6px var(--success)' : 'none',
+          boxShadow: isOpen ? '0 0 5px var(--success)' : 'none',
           animation: isOpen ? 'pulse-dot 1.5s infinite' : 'none',
+          flexShrink: 0,
         }} />
-        <span style={{ fontSize: 11, fontWeight: 700, color: isOpen ? 'var(--success)' : 'var(--text-muted)', letterSpacing: '0.04em' }}>
-          NSE {isOpen ? 'LIVE' : 'CLOSED'}
+        <span style={{ fontSize: 10, fontWeight: 700, color: isOpen ? 'var(--success)' : 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+          {getModeLabel()} {isOpen ? 'LIVE' : 'CLOSED'} · {timeStr} IST
         </span>
-        {!isOpen && marketStatus && (
-          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-            {marketStatus.current_time_ist} IST · Opens {marketStatus.next_open}
-          </span>
-        )}
-        {isOpen && lastFetch && (
-          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-            {lastFetch.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-          </span>
-        )}
       </div>
 
-      {/* Tickers */}
-      {tickers.length === 0 ? (
-        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Loading prices…</span>
-      ) : (
-        tickers.map(t => {
-          const up = t.changePct >= 0
+      {/* Scrolling tickers */}
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', gap: 20, alignItems: 'center' }}>
+        {ticks.map(({ symbol, ltp, prev }) => {
+          const name = symbol.replace('NSE:NIFTY 50', 'NIFTY').replace('NSE:NIFTY BANK', 'BNKNIFTY').replace('NSE:', '').replace('=X', '')
+          const up   = ltp !== null && prev !== null ? ltp >= prev : true
+          const pct  = ltp && prev && prev !== 0 ? ((ltp - prev) / prev) * 100 : null
           return (
-            <div key={t.symbol} className="ticker-item">
-              <span className="ticker-symbol">{t.symbol.replace('NSE:', '')}</span>
-              <span className="ticker-price" style={{
-                transition: 'color 0.3s',
-              }}>
-                ₹{t.price < 100
-                  ? t.price.toFixed(3)
-                  : t.price < 10000
-                    ? t.price.toFixed(2)
-                    : t.price.toFixed(1)}
+            <div key={symbol} style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, fontSize: 11 }}>
+              <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{name}</span>
+              <span style={{ fontWeight: 700, color: ltp ? (up ? '#26a69a' : '#ef5350') : 'var(--text-muted)' }}>
+                {ltp !== null ? `${getCurrencyPrefix()}${fmt(ltp)}` : '—'}
               </span>
-              <span className={`ticker-change ${up ? 'up' : 'down'}`}>
-                {up ? '▲' : '▼'} {Math.abs(t.changePct).toFixed(2)}%
-              </span>
-              {/* Source indicator */}
-              {!isOpen && (
-                <span style={{
-                  fontSize: 9, color: 'var(--text-muted)',
-                  background: 'var(--bg-elevated)',
-                  borderRadius: 4, padding: '1px 5px',
-                  border: '1px solid var(--border-subtle)',
-                }}>
-                  PREV CLOSE
+              {pct !== null && (
+                <span style={{ color: up ? '#26a69a' : '#ef5350', fontSize: 10 }}>
+                  {up ? '▲' : '▼'}{Math.abs(pct).toFixed(2)}%
                 </span>
               )}
             </div>
           )
-        })
-      )}
+        })}
+      </div>
     </div>
   )
 }

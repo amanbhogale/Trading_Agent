@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import api from '../api'
+import { TickerSearch } from '../components/TickerSearch'
 
 
 const STRATEGIES = [
@@ -15,9 +16,9 @@ const STRATEGIES = [
 ]
 
 
-const SESSION_KEY = 'backtestPageState'
+// SESSION_KEY is derived dynamically per mode inside the component
 
-export default function BacktestPage() {
+export default function BacktestPage({ mode }: { mode: string }) {
   const [symbol,   setSymbol]   = useState('NSE:INFY')
   const [strategy, setStrategy] = useState('sma_crossover')
   const [params,   setParams]   = useState('{"fast": 20, "slow": 50}')
@@ -27,10 +28,12 @@ export default function BacktestPage() {
   const [output,   setOutput]   = useState('')
   const [error,    setError]    = useState('')
 
+  const sessionKey = `backtestPageState_${mode}`
+
   // Restore from sessionStorage on mount
   useEffect(() => {
     try {
-      const saved = sessionStorage.getItem(SESSION_KEY)
+      const saved = sessionStorage.getItem(sessionKey)
       if (saved) {
         const s = JSON.parse(saved)
         if (s.symbol)   setSymbol(s.symbol)
@@ -43,12 +46,32 @@ export default function BacktestPage() {
     } catch {}
   }, [])
 
+  // Auto-switch default symbol when mode changes
+  useEffect(() => {
+    const isCrypto = symbol.endsWith("USDT") || symbol.startsWith("P-") || symbol.startsWith("C-") || symbol.startsWith("F-")
+    const isForex = symbol.endsWith("=X")
+    
+    if (mode === 'crypto' && !isCrypto) {
+      setSymbol('BTCUSDT')
+      setOutput('')
+      setChartUrl('')
+    } else if (mode === 'forex' && !isForex) {
+      setSymbol('EURUSD=X')
+      setOutput('')
+      setChartUrl('')
+    } else if (mode === 'equity' && (isCrypto || isForex)) {
+      setSymbol('NSE:INFY')
+      setOutput('')
+      setChartUrl('')
+    }
+  }, [mode])
+
   // Persist to sessionStorage whenever results change
   useEffect(() => {
     if (output || chartUrl) {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ symbol, strategy, params, days, output, chartUrl }))
+      sessionStorage.setItem(sessionKey, JSON.stringify({ symbol, strategy, params, days, output, chartUrl }))
     }
-  }, [output, chartUrl, symbol, strategy, params, days])
+  }, [output, chartUrl, symbol, strategy, params, days, sessionKey])
 
   function handleStrategyChange(val: string) {
     setStrategy(val)
@@ -86,15 +109,22 @@ export default function BacktestPage() {
     <div className="page animate-fade-up">
       <div className="page-header">
         <h1 className="page-title">🧪 Strategy Backtest</h1>
-        <p className="page-subtitle">Evaluate any of the {STRATEGIES.length} trading strategies against historical NSE/BSE data with slippage & fee simulation.</p>
+        <p className="page-subtitle">
+          Evaluate any of the {STRATEGIES.length} trading strategies against historical {mode === 'equity' ? 'NSE/BSE' : mode === 'forex' ? 'Forex' : 'Delta Exchange Crypto'} data with slippage & fee simulation.
+        </p>
       </div>
 
       {/* Config Panel */}
-      <div className="card" style={{ marginBottom: 20 }}>
+      <div className="card" style={{ marginBottom: 20, overflow: 'visible' }}>
         <div className="grid" style={{ gridTemplateColumns: '1fr 2fr 1fr', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div className="form-row" style={{ marginBottom: 0 }}>
             <label className="form-label">Symbol</label>
-            <input className="form-input" list="react-tickers-datalist" value={symbol} onChange={e => setSymbol(e.target.value)} placeholder="NSE:INFY" />
+            <TickerSearch 
+              value={symbol} onChange={setSymbol}
+              placeholder={mode === 'equity' ? 'NSE:INFY' : mode === 'forex' ? 'EURUSD=X' : 'BTCUSDT'}
+              style={{ width: '100%', boxSizing: 'border-box' }}
+              mode={mode}
+            />
           </div>
 
           <div className="form-row" style={{ marginBottom: 0 }}>

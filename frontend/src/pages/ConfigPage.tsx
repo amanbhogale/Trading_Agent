@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import api from '../api'
 
 
@@ -6,12 +6,13 @@ const PROVIDERS = [
   { value: 'openrouter',    label: 'OpenRouter',   baseUrl: 'https://openrouter.ai/api/v1' },
   { value: 'openai',        label: 'OpenAI',        baseUrl: '' },
   { value: 'anthropic',     label: 'Anthropic',     baseUrl: '' },
-  { value: 'google-gemini', label: 'Google Gemini', baseUrl: '' },
+  { value: 'google-gemini', label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
 ]
 
 // Verified valid model IDs per provider
 const PROVIDER_MODELS: Record<string, { id: string; label: string; free?: boolean }[]> = {
   openrouter: [
+    { id: 'nvidia/nemotron-3-ultra-550b-a55b:free',   label: 'Nvidia Nemotron 550B',      free: true },
     { id: 'deepseek/deepseek-r1:free',                label: 'DeepSeek R1',              free: true },
     { id: 'deepseek/deepseek-chat-v3-0324:free',      label: 'DeepSeek Chat v3',         free: true },
     { id: 'meta-llama/llama-3.3-70b-instruct:free',   label: 'Llama 3.3 70B',            free: true },
@@ -48,7 +49,7 @@ interface Props {
 /* ── LLM Connection Panel ───────────────────── */
 function LLMPanel({ setConnected }: { setConnected: (v: boolean) => void }) {
   const [provider,    setProvider]    = useState('openrouter')
-  const [model,       setModel]       = useState('deepseek/deepseek-r1:free')
+  const [model,       setModel]       = useState('nvidia/nemotron-3-ultra-550b-a55b:free')
   const [apiKey,      setApiKey]      = useState('')
   const [baseUrl,     setBaseUrl]     = useState('https://openrouter.ai/api/v1')
   const [loading,     setLoading]     = useState(false)
@@ -270,6 +271,243 @@ function KitePanel({ setKiteConnected }: { setKiteConnected: (v: boolean) => voi
   )
 }
 
+/* ── Delta Exchange Connection Panel ────────── */
+function DeltaPanel() {
+  const [apiKey,    setApiKey]    = useState('')
+  const [apiSecret, setApiSecret] = useState('')
+  const [loading,   setLoading]   = useState(false)
+  const [status,    setStatus]    = useState('')
+  const [ok,        setOk]        = useState(false)
+  const [userName,  setUserName]  = useState('')
+
+  async function connect() {
+    setLoading(true)
+    setStatus('')
+    try {
+      const res = await api.post('/connect_delta', {
+        api_key: apiKey, api_secret: apiSecret,
+      })
+      const success = res.data.connected === true
+      setOk(success)
+      setStatus(res.data.message || res.data.error)
+      setUserName(res.data.user || '')
+    } catch (e: any) {
+      const msg = e.response?.data?.error || e.message
+      setStatus('❌ ' + msg)
+      setOk(false)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="card" style={{ position: 'relative' }}>
+      {/* Status badge top-right */}
+      <div style={{ position: 'absolute', top: 18, right: 18 }}>
+        <span className={`status-pill ${ok ? 'connected' : 'disconnected'}`}>
+          <span className="status-dot" />
+          {ok ? (userName || 'Connected') : 'Disconnected'}
+        </span>
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 20, marginBottom: 4 }}>🪙</div>
+        <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Delta Exchange</h2>
+        <p className="text-sm text-muted">API credentials setup for live mock trading and portfolios on Delta.</p>
+      </div>
+
+      <div className="form-row">
+        <label className="form-label">Delta API Key</label>
+        <input className="form-input" type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
+          placeholder="Your Delta API Key" />
+      </div>
+
+      <div className="form-row">
+        <label className="form-label">API Secret</label>
+        <input className="form-input" type="password" value={apiSecret} onChange={e => setApiSecret(e.target.value)}
+          placeholder="Your Delta API Secret" />
+      </div>
+
+      <button className="btn btn-primary w-full" style={{ marginTop: 8 }} onClick={connect} disabled={loading}>
+        {loading ? <><span className="spinner" /> Connecting…</> : '🔌 Connect Delta'}
+      </button>
+
+      {status && (
+        <div className={`alert ${ok ? 'alert-success' : 'alert-error'} animate-fade-up`}
+          style={{ marginTop: 12, fontSize: 12 }}>
+          {status}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── Finnhub Connection Panel ─────────────── */
+function FinnhubPanel() {
+  const [apiKey,    setApiKey]    = useState('')
+  const [loading,   setLoading]   = useState(false)
+  const [status,    setStatus]    = useState('')
+  const [ok,        setOk]        = useState(false)
+
+  async function connect() {
+    setLoading(true)
+    setStatus('')
+    try {
+      const res = await api.post('/connect_finnhub', { api_key: apiKey })
+      const success = res.data.connected === true
+      setOk(success)
+      setStatus(res.data.message || res.data.error)
+    } catch (e: any) {
+      setStatus('❌ ' + (e.response?.data?.error || e.message))
+      setOk(false)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="card" style={{ position: 'relative' }}>
+      <div style={{ position: 'absolute', top: 18, right: 18 }}>
+        <span className={`status-pill ${ok ? 'connected' : 'disconnected'}`}>
+          <span className="status-dot" />{ok ? 'Connected' : 'Disconnected'}
+        </span>
+      </div>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 20, marginBottom: 4 }}>📈</div>
+        <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Finnhub</h2>
+        <p className="text-sm text-muted">API credentials for global market OHLCV data.</p>
+      </div>
+      <div className="form-row"><label className="form-label">Finnhub API Key</label>
+        <input className="form-input" type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Your Finnhub API Key" />
+      </div>
+      <button className="btn btn-primary w-full" style={{ marginTop: 8 }} onClick={connect} disabled={loading}>
+        {loading ? <><span className="spinner" /> Connecting…</> : '🔌 Connect Finnhub'}
+      </button>
+      {status && <div className={`alert ${ok ? 'alert-success' : 'alert-error'} animate-fade-up`} style={{ marginTop: 12, fontSize: 12 }}>{status}</div>}
+    </div>
+  )
+}
+
+/* ── API Status & Routing Strategy Panel ─────── */
+function APIStatusPanel() {
+  const [status, setStatus] = useState<Record<string, {
+    connected: boolean;
+    calls_last_minute: number;
+    limit: number;
+    rate_limited: boolean;
+  }>>({})
+  const [loading, setLoading] = useState(true)
+
+  async function fetchStatus() {
+    try {
+      const res = await api.get('/api_status')
+      setStatus(res.data)
+    } catch (e) {
+      console.error('Failed to fetch API status:', e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchStatus()
+    const interval = setInterval(fetchStatus, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const apiNames: Record<string, string> = {
+    kite: 'Zerodha Kite',
+    delta: 'Delta Exchange',
+    finnhub: 'Finnhub API',
+    yfinance: 'Yahoo Finance'
+  }
+
+  return (
+    <div className="card" style={{ gridColumn: 'span 2', marginTop: 12 }}>
+      <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: 20, marginBottom: 4 }}>📊</div>
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>API Routing & Rate Limits</h2>
+          <p className="text-sm text-muted">
+            Status and live metrics of backend data providers. Workload is dynamically routed based on rates and chart period.
+          </p>
+        </div>
+        <button className="btn btn-secondary text-sm" onClick={fetchStatus} disabled={loading} style={{ padding: '6px 12px' }}>
+          🔄 Refresh
+        </button>
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontSize: 13 }}>
+              <th style={{ padding: '10px 12px', fontWeight: 600 }}>API Provider</th>
+              <th style={{ padding: '10px 12px', fontWeight: 600 }}>Status</th>
+              <th style={{ padding: '10px 12px', fontWeight: 600 }}>Calls (60s window)</th>
+              <th style={{ padding: '10px 12px', fontWeight: 600 }}>Rate Limit</th>
+              <th style={{ padding: '10px 12px', fontWeight: 600 }}>Load/Health</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(status).map(([key, value]) => {
+              const capUsed = value.calls_last_minute
+              const maxCap = value.limit
+              const ratio = maxCap > 0 ? (capUsed / maxCap) * 100 : 0
+              let loadStatus = 'Optimal ✅'
+              let loadColor = 'var(--success)'
+              
+              if (value.rate_limited) {
+                loadStatus = 'Rate Limited ⚠️'
+                loadColor = 'var(--error)'
+              } else if (ratio > 70) {
+                loadStatus = 'High Load ⚡'
+                loadColor = 'var(--warning)'
+              }
+
+              return (
+                <tr key={key} style={{ borderBottom: '1px solid var(--border-color)', fontSize: 14 }}>
+                  <td style={{ padding: '12px 12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {apiNames[key] || key}
+                  </td>
+                  <td style={{ padding: '12px 12px' }}>
+                    <span className={`status-pill ${value.connected ? 'connected' : 'disconnected'}`}>
+                      <span className="status-dot" />
+                      {value.connected ? 'Connected' : 'Disconnected'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 12px', color: 'var(--text-primary)' }}>
+                    {capUsed}
+                  </td>
+                  <td style={{ padding: '12px 12px', color: 'var(--text-secondary)' }}>
+                    {maxCap >= 9999 ? 'Unlimited' : `${maxCap} / min`}
+                  </td>
+                  <td style={{ padding: '12px 12px', color: loadColor, fontWeight: 600 }}>
+                    {value.connected ? loadStatus : 'Unavailable'}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ marginTop: 18, padding: 14, backgroundColor: 'var(--bg-muted, #f8f9fa)', borderRadius: 8, border: '1px solid var(--border-color)' }}>
+        <h4 style={{ margin: '0 0 6px 0', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>🔄 Routing Strategy Summary:</h4>
+        <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          <li><strong>Longer Charts (&gt;30 Days Lookback)</strong>: Always routed exclusively to <strong>Yahoo Finance API</strong> to conserve API rate limits on premium connections.</li>
+          <li><strong>Shorter Charts (&le;30 Days Lookback)</strong>: Work is divided dynamically:
+            <ul style={{ margin: 0, paddingLeft: 16 }}>
+              <li><strong>Crypto Assets</strong>: Handled by <strong>Delta Exchange API</strong> (falls back to Yahoo Finance if limited).</li>
+              <li><strong>Indian Equities (NSE/BSE)</strong>: Handled by <strong>Zerodha Kite API</strong> or <strong>Finnhub</strong>, falling back to Yahoo Finance if rate limits are reached.</li>
+              <li><strong>Global Equities</strong>: Handled by <strong>Finnhub API</strong>, falling back to Yahoo Finance if rate limits are reached.</li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+    </div>
+  )
+}
+
 /* ── Main Config Page ───────────────────────── */
 export default function ConfigPage({ setConnected, setKiteConnected }: Props) {
   return (
@@ -277,14 +515,17 @@ export default function ConfigPage({ setConnected, setKiteConnected }: Props) {
       <div className="page-header">
         <h1 className="page-title">⚙️ Configuration</h1>
         <p className="page-subtitle">
-          Connect your LLM agent and Zerodha Kite broker independently — each has its own status.
+          Connect your LLM agent, Zerodha Kite broker, and Delta Exchange API independently.
         </p>
       </div>
 
-      {/* Two independent connection panels */}
-      <div className="grid grid-6-6" style={{ gap: 20, marginBottom: 24 }}>
+      {/* Independent connection panels */}
+      <div className="grid grid-2" style={{ gap: 20, marginBottom: 24 }}>
         <LLMPanel setConnected={setConnected} />
         <KitePanel setKiteConnected={setKiteConnected} />
+        <DeltaPanel />
+        <FinnhubPanel />
+        <APIStatusPanel />
       </div>
 
       {/* Info row */}

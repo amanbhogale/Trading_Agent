@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Dict, Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 from .llm_service import LLMService, LLMConfig
 from .memory import MemoryManager
@@ -75,7 +75,65 @@ class OrchestratorAgent:
         # plain LLM for orchestration reasoning (no tools)
         self._orchestrator_llm = llm_service
 
-        logger.info("OrchestratorAgent ready ✅")
+        # ── Build LangGraph StateGraph for Orchestrator ──────────────────
+        from typing import Annotated, Sequence, TypedDict, Any
+        from langgraph.graph import StateGraph, START, END
+        from langgraph.graph.message import add_messages
+        from .sub_agents import checkpointer
+
+        class OrchestratorState(TypedDict):
+            messages: Annotated[Sequence[Any], add_messages]
+
+        def orchestrate_node(state: OrchestratorState) -> Dict:
+            # We only process the last human message
+            last_msg = state["messages"][-1]
+            user_message = last_msg.content
+
+            logger.info("Orchestrator received: %s", user_message[:100])
+            intent = self._classify_intent(user_message)
+            logger.info("Intent: %s", intent)
+
+            agent_results: Dict[str, str] = {}
+
+            if "market_data" in intent:
+                agent_results["market_data"] = self.market_data.run(user_message)
+
+            if "analysis" in intent:
+                agent_results["analysis"] = self.analysis.run(user_message)
+
+            if "strategy" in intent:
+                agent_results["strategy"] = self.strategy.run(user_message)
+
+            if "visualization" in intent:
+                agent_results["visualization"] = self.viz.run(user_message)
+
+            if "risk" in intent:
+                agent_results["risk"] = self.risk.run(user_message)
+
+            if "execution" in intent:
+                agent_results["execution"] = (
+                    "⚠️ Trade execution requires explicit human approval "
+                    "via the Execute Trade tab."
+                )
+
+            if not agent_results:
+                resp = self._orchestrator_llm.invoke([
+                    SystemMessage(content=ORCHESTRATOR_SYSTEM),
+                    HumanMessage(content=user_message),
+                ])
+                final = resp.content
+            else:
+                final = self._synthesize(user_message, agent_results)
+
+            return {"messages": [AIMessage(content=final)]}
+
+        builder = StateGraph(OrchestratorState)
+        builder.add_node("orchestrate", orchestrate_node)
+        builder.add_edge(START, "orchestrate")
+        builder.add_edge("orchestrate", END)
+        
+        self.graph = builder.compile(checkpointer=checkpointer)
+        logger.info("OrchestratorAgent LangGraph ready ✅")
 
     # ── routing ──────────────────────────────────────────────────────────
 
@@ -121,49 +179,14 @@ If trade action is recommended, clearly state it requires human approval.
     def run(self, user_message: str) -> str:
         """
         Main entry-point called by Gradio.
-        Routes to sub-agents and returns synthesized response.
+        Routes to sub-agents and returns synthesized response via LangGraph.
         """
-        logger.info("Orchestrator received: %s", user_message[:100])
-        self.mem.append_conversation(self.AGENT_ID, "human", user_message)
-
-        intent = self._classify_intent(user_message)
-        logger.info("Intent: %s", intent)
-
-        agent_results: Dict[str, str] = {}
-
-        if "market_data" in intent:
-            agent_results["market_data"] = self.market_data.run(user_message)
-
-        if "analysis" in intent:
-            agent_results["analysis"] = self.analysis.run(user_message)
-
-        if "strategy" in intent:
-            agent_results["strategy"] = self.strategy.run(user_message)
-
-        if "visualization" in intent:
-            agent_results["visualization"] = self.viz.run(user_message)
-
-        if "risk" in intent:
-            agent_results["risk"] = self.risk.run(user_message)
-
-        if "execution" in intent:
-            agent_results["execution"] = (
-                "⚠️ Trade execution requires explicit human approval "
-                "via the Execute Trade tab."
-            )
-
-        if not agent_results:
-            # general question – answer directly
-            resp = self._orchestrator_llm.invoke([
-                SystemMessage(content=ORCHESTRATOR_SYSTEM),
-                HumanMessage(content=user_message),
-            ])
-            final = resp.content
-        else:
-            final = self._synthesize(user_message, agent_results)
-
-        self.mem.append_conversation(self.AGENT_ID, "ai", final)
-        return final
+        config = {"configurable": {"thread_id": self.AGENT_ID}}
+        response = self.graph.invoke(
+            {"messages": [HumanMessage(content=user_message)]}, 
+            config=config
+        )
+        return response["messages"][-1].content
 
     def execute_trade(self, order: Dict) -> str:
         """Called explicitly from Gradio trade execution tab."""

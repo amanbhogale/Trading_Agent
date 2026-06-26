@@ -1,7 +1,7 @@
 import psycopg2
 
 def init_db():
-    conn = psycopg2.connect(dbname='trading_db', user='trading_agent', password='secretpassword', host='localhost')
+    conn = psycopg2.connect(dbname='trading_db', user='trading_agent', password='zombie612@', host='localhost')
     conn.autocommit = True
     cur = conn.cursor()
     
@@ -46,7 +46,8 @@ def init_db():
         id SERIAL PRIMARY KEY,
         date DATE,
         data JSONB,
-        logged_at TIMESTAMP
+        logged_at TIMESTAMP,
+        market_mode VARCHAR(50) DEFAULT 'equity'
     );
     """)
 
@@ -65,33 +66,55 @@ def init_db():
         name VARCHAR(255) NOT NULL,
         sector VARCHAR(100),
         status VARCHAR(50),
-        demerger_details TEXT
+        demerger_details TEXT,
+        market_mode VARCHAR(50) DEFAULT 'equity'
     );
     """)
 
     # Seed tickers
     tickers = [
-        ("NSE:TMCV", "Tata Motors Commercial Vehicles", "Automotive - Commercial", "Active", "Demerged entity representing the Commercial Vehicles business of Tata Motors Ltd."),
-        ("NSE:TMPV", "Tata Motors Passenger Vehicles", "Automotive - Passenger & EV", "Active", "Demerged entity representing Passenger Vehicles, Electric Vehicles, and JLR business of Tata Motors Ltd."),
-        ("NSE:RELIANCE", "Reliance Industries Ltd.", "Conglomerate / Energy", "Active", None),
-        ("NSE:TCS", "Tata Consultancy Services Ltd.", "IT Services", "Active", None),
-        ("NSE:INFY", "Infosys Ltd.", "IT Services", "Active", None),
-        ("NSE:HDFCBANK", "HDFC Bank Ltd.", "Banking & Financials", "Active", None),
-        ("NSE:ICICIBANK", "ICICI Bank Ltd.", "Banking & Financials", "Active", None),
-        ("NSE:WIPRO", "Wipro Ltd.", "IT Services", "Active", None),
-        ("NSE:BAJFINANCE", "Bajaj Finance Ltd.", "Banking & Financials", "Active", None),
-        ("NSE:SBIN", "State Bank of India", "Banking & Financials", "Active", None),
-        ("NSE:ADANIENT", "Adani Enterprises Ltd.", "Conglomerate", "Active", None),
-        ("NSE:ITC", "ITC Ltd.", "Consumer Goods / Tobacco", "Active", None),
+        ("NSE:TMCV", "Tata Motors Commercial Vehicles", "Automotive - Commercial", "Active", "Demerged entity representing the Commercial Vehicles business of Tata Motors Ltd.", "equity"),
+        ("NSE:TMPV", "Tata Motors Passenger Vehicles", "Automotive - Passenger & EV", "Active", "Demerged entity representing Passenger Vehicles, Electric Vehicles, and JLR business of Tata Motors Ltd.", "equity"),
+        ("NSE:RELIANCE", "Reliance Industries Ltd.", "Conglomerate / Energy", "Active", None, "equity"),
+        ("NSE:TCS", "Tata Consultancy Services Ltd.", "IT Services", "Active", None, "equity"),
+        ("NSE:INFY", "Infosys Ltd.", "IT Services", "Active", None, "equity"),
+        ("NSE:HDFCBANK", "HDFC Bank Ltd.", "Banking & Financials", "Active", None, "equity"),
+        ("NSE:ICICIBANK", "ICICI Bank Ltd.", "Banking & Financials", "Active", None, "equity"),
+        ("NSE:WIPRO", "Wipro Ltd.", "IT Services", "Active", None, "equity"),
+        ("NSE:BAJFINANCE", "Bajaj Finance Ltd.", "Banking & Financials", "Active", None, "equity"),
+        ("NSE:SBIN", "State Bank of India", "Banking & Financials", "Active", None, "equity"),
+        ("NSE:ADANIENT", "Adani Enterprises Ltd.", "Conglomerate", "Active", None, "equity"),
+        ("NSE:ITC", "ITC Ltd.", "Consumer Goods / Tobacco", "Active", None, "equity"),
+        
+        # Forex
+        ("EURUSD=X", "EUR/USD Exchange Rate", "Forex", "Active", None, "forex"),
+        ("GBPUSD=X", "GBP/USD Exchange Rate", "Forex", "Active", None, "forex"),
+        ("USDJPY=X", "USD/JPY Exchange Rate", "Forex", "Active", None, "forex"),
+        ("AUDUSD=X", "AUD/USD Exchange Rate", "Forex", "Active", None, "forex"),
+        ("USDCAD=X", "USD/CAD Exchange Rate", "Forex", "Active", None, "forex"),
+        ("USDCHF=X", "USD/CHF Exchange Rate", "Forex", "Active", None, "forex"),
+        ("NZDUSD=X", "NZD/USD Exchange Rate", "Forex", "Active", None, "forex"),
+        ("EURGBP=X", "EUR/GBP Exchange Rate", "Forex", "Active", None, "forex"),
+        ("EURJPY=X", "EUR/JPY Exchange Rate", "Forex", "Active", None, "forex"),
+        ("GBPJPY=X", "GBP/JPY Exchange Rate", "Forex", "Active", None, "forex"),
+        
+        # Crypto
+        ("BTCUSDT", "Bitcoin / USDT", "Crypto", "Active", None, "crypto"),
+        ("ETHUSDT", "Ethereum / USDT", "Crypto", "Active", None, "crypto"),
+        ("SOLUSDT", "Solana / USDT", "Crypto", "Active", None, "crypto"),
+        ("XRPUSDT", "Ripple / USDT", "Crypto", "Active", None, "crypto"),
+        ("DOGEUSDT", "Dogecoin / USDT", "Crypto", "Active", None, "crypto"),
+        ("PAXGUSDT", "Pax Gold / USDT", "Crypto", "Active", None, "crypto"),
     ]
 
-    for sym, name, sector, status, details in tickers:
+    for sym, name, sector, status, details, mm in tickers:
         cur.execute("""
-        INSERT INTO tickers_classification (symbol, name, sector, status, demerger_details)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO tickers_classification (symbol, name, sector, status, demerger_details, market_mode)
+        VALUES (%s, %s, %s, %s, %s, %s)
         ON CONFLICT (symbol) DO UPDATE 
-        SET name = EXCLUDED.name, sector = EXCLUDED.sector, status = EXCLUDED.status, demerger_details = EXCLUDED.demerger_details;
-        """, (sym, name, sector, status, details))
+        SET name = EXCLUDED.name, sector = EXCLUDED.sector, status = EXCLUDED.status, 
+            demerger_details = EXCLUDED.demerger_details, market_mode = EXCLUDED.market_mode;
+        """, (sym, name, sector, status, details, mm))
 
     print("Tables created and seeded successfully.")
     cur.close()

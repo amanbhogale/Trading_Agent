@@ -4,10 +4,17 @@
 <p class="subtitle">Technical Analysis & Charting</p>
 
 <div class="card">
+    <label style="margin-bottom: 8px;">Select Ticker for Analysis</label>
     <div class="chat-input-area">
         <input type="text" id="symbol-input" list="tickers-datalist" placeholder="e.g. NSE:INFY" value="NSE:INFY" onkeypress="if(event.key === 'Enter') runAnalysis()">
         <button id="analyse-btn" onclick="runAnalysis()">🔍 Analyse</button>
     </div>
+</div>
+
+<!-- Loading spinner block -->
+<div class="card" id="analysis-loading-card" style="display: none; text-align: center; padding: 40px 20px;">
+    <div class="spinner" style="margin: 0 auto 15px auto;"></div>
+    <p>Running multi-agent technical analysis & generating charts...</p>
 </div>
 
 <div id="results-area" style="display: none;">
@@ -27,8 +34,13 @@
         if (!symbol) return;
         
         const btn = document.getElementById('analyse-btn');
+        const loadingCard = document.getElementById('analysis-loading-card');
+        const resultsArea = document.getElementById('results-area');
+        
         btn.disabled = true;
         btn.innerText = 'Analyzing...';
+        loadingCard.style.display = 'block';
+        resultsArea.style.display = 'none';
         
         try {
             const res = await fetch('/api/analysis', {
@@ -38,12 +50,18 @@
             });
             const data = await res.json();
             
-            document.getElementById('results-area').style.display = 'block';
-            document.getElementById('markdown-output').innerHTML = data.output;
-            document.getElementById('chart-iframe').src = data.chart_url;
-            
+            if (data.error) {
+                alert('Error: ' + data.error);
+                loadingCard.style.display = 'none';
+            } else {
+                loadingCard.style.display = 'none';
+                resultsArea.style.display = 'block';
+                document.getElementById('markdown-output').innerHTML = data.output;
+                document.getElementById('chart-iframe').src = data.chart_url;
+            }
         } catch (e) {
             alert('Error: ' + e.message);
+            loadingCard.style.display = 'none';
         }
         
         btn.disabled = false;

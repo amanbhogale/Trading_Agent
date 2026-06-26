@@ -5,7 +5,7 @@
 
 <div class="card grid-2">
     <div>
-        <h3>LLM Provider</h3>
+        <h3 style="margin-bottom: 20px; font-weight: 700; font-size: 1.15rem; color: var(--text-main); border-bottom: 1px solid var(--border); padding-bottom: 10px;">LLM Provider</h3>
         <form id="config-form">
             <div class="form-group">
                 <label>Provider</label>
@@ -30,22 +30,29 @@
             </div>
         </form>
     </div>
-    <div>
-        <h3>Broker (Kite)</h3>
-        <div class="form-group">
-            <label>Kite API Key</label>
-            <input type="password" id="kite_key" name="kite_key" form="config-form">
+    <div style="display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+            <h3 style="margin-bottom: 20px; font-weight: 700; font-size: 1.15rem; color: var(--text-main); border-bottom: 1px solid var(--border); padding-bottom: 10px;">Broker (Kite)</h3>
+            <div class="form-group">
+                <label>Kite API Key</label>
+                <input type="password" id="kite_key" name="kite_key" form="config-form">
+            </div>
+            <div class="form-group">
+                <label>Kite Access Token</label>
+                <input type="password" id="kite_token" name="kite_token" form="config-form">
+            </div>
         </div>
-        <div class="form-group">
-            <label>Kite Access Token</label>
-            <input type="password" id="kite_token" name="kite_token" form="config-form">
+        
+        <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 20px;">
+            <div>
+                <button type="button" style="width: 100%;" onclick="testKite()">🧪 Test Kite Connection</button>
+                <div class="status-box" id="kite-test-out" style="margin-top: 8px; font-weight: bold; display: none;"></div>
+            </div>
+            <div>
+                <button type="button" style="width: 100%;" onclick="connect()">🔌 Connect</button>
+                <div class="status-box" id="status-out" style="margin-top: 8px;">Not connected</div>
+            </div>
         </div>
-        <br>
-        <button type="button" onclick="testKite()">🧪 Test Kite Connection</button>
-        <div class="status-box" id="kite-test-out" style="margin-top: 10px; font-weight: bold;"></div>
-        <br>
-        <button type="button" onclick="connect()">🔌 Connect</button>
-        <div class="status-box" id="status-out">Not connected</div>
     </div>
 </div>
 {% endblock %}
@@ -55,7 +62,7 @@
         "openrouter": "https://openrouter.ai/api/v1",
         "openai": "",
         "anthropic": "",
-        "google-gemini": ""
+        "google-gemini": "https://generativelanguage.googleapis.com/v1beta/openai"
     };
     function updateBaseUrl() {
         document.getElementById('base_url').value = urls[document.getElementById('provider').value];
@@ -80,6 +87,7 @@
 
     async function testKite() {
         const kiteOut = document.getElementById('kite-test-out');
+        kiteOut.style.display = 'block';
         kiteOut.innerText = "Testing...";
         
         const form = document.getElementById('config-form');
@@ -95,9 +103,6 @@
             body: JSON.stringify(data)
         });
         const result = await res.json();
-        // The message may have markdown, but for this simple box we just show text
-        // Or we could parse it, but let's just use innerHTML since we return simple markdownish string
-        // Actually, we can just strip the markdown or render it. Let's render as text for now.
         kiteOut.innerText = result.message.replace(/\*\*/g, '');
     }
 </script>

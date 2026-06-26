@@ -23,14 +23,21 @@
             <input type="number" id="days" value="365">
         </div>
     </div>
-    <div>
+    <div style="display: flex; flex-direction: column; justify-content: space-between;">
         <div class="form-group">
             <label>Parameters (JSON)</label>
             <input type="text" id="params" value='{"fast": 20, "slow": 50}'>
         </div>
-        <br>
-        <button id="bt-btn" onclick="runBacktest()">▶️ Run Backtest</button>
+        <div style="margin-top: 20px;">
+            <button id="bt-btn" style="width: 100%;" onclick="runBacktest()">▶️ Run Backtest</button>
+        </div>
     </div>
+</div>
+
+<!-- Loading spinner block -->
+<div class="card" id="backtest-loading-card" style="display: none; text-align: center; padding: 40px 20px;">
+    <div class="spinner" style="margin: 0 auto 15px auto;"></div>
+    <p>Running historical backtesting simulation & plotting results...</p>
 </div>
 
 <div id="results-area" style="display: none;">
@@ -47,8 +54,13 @@
 <script>
     async function runBacktest() {
         const btn = document.getElementById('bt-btn');
+        const loadingCard = document.getElementById('backtest-loading-card');
+        const resultsArea = document.getElementById('results-area');
+        
         btn.disabled = true;
         btn.innerText = 'Running...';
+        loadingCard.style.display = 'block';
+        resultsArea.style.display = 'none';
         
         const data = {
             symbol: document.getElementById('symbol').value,
@@ -65,12 +77,18 @@
             });
             const result = await res.json();
             
-            document.getElementById('results-area').style.display = 'block';
-            document.getElementById('markdown-output').innerHTML = result.output;
-            document.getElementById('chart-iframe').src = result.chart_url;
-            
+            if (result.error) {
+                alert('Error: ' + result.error);
+                loadingCard.style.display = 'none';
+            } else {
+                loadingCard.style.display = 'none';
+                resultsArea.style.display = 'block';
+                document.getElementById('markdown-output').innerHTML = result.output;
+                document.getElementById('chart-iframe').src = result.chart_url;
+            }
         } catch (e) {
             alert('Error: ' + e.message);
+            loadingCard.style.display = 'none';
         }
         
         btn.disabled = false;

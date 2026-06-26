@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>📰 News Feed</h1>
+<p class="subtitle">Latest market news and analysis for the selected mode.</p>
+
+<!-- Market Sentiment & Volatility Dashboard -->
+<div class="grid-2" id="news-dashboard" style="display: none; margin-bottom: 24px; gap: 20px;">
+    <!-- Sentiment Gauge Card -->
+    <div class="card" style="position: relative; padding: 20px; display: flex; align-items: center; gap: 20px; overflow: hidden; margin-bottom: 0;">
+        <div id="sentiment-glow" style="position: absolute; top: -50px; right: -50px; width: 120px; height: 120px; border-radius: 50%; background: rgba(245, 158, 11, 0.15); filter: blur(35px); pointer-events: none; transition: background 0.5s ease;"></div>
+        <div style="position: relative; width: 64px; height: 64px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--bg-main); border: 1px solid var(--border); border-radius: 50%;">
+            <span id="sentiment-emoji" style="font-size: 28px;">⚖️</span>
+        </div>
+        <div style="flex: 1; z-index: 1;">
+            <h4 style="margin: 0 0 4px 0; font-size: 1.05rem; font-weight: 700; color: var(--text-main);">Market Sentiment</h4>
+            <p id="sentiment-desc" style="margin: 0; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">Evaluating the tone of recent news headlines...</p>
+            <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
+                <span id="sentiment-badge" style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 800; background-color: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3);">NEUTRAL</span>
+                <span id="sentiment-score" style="font-size: 0.85rem; font-weight: 700; color: var(--text-main);">0.00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Volatility Index (VIX) Card -->
+    <div class="card" style="position: relative; padding: 20px; display: flex; align-items: center; gap: 20px; overflow: hidden; margin-bottom: 0;">
+        <div id="vix-glow" style="position: absolute; top: -50px; right: -50px; width: 120px; height: 120px; border-radius: 50%; background: rgba(142, 166, 186, 0.15); filter: blur(35px); pointer-events: none; transition: background 0.5s ease;"></div>
+        <div style="position: relative; width: 64px; height: 64px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--bg-main); border: 1px solid var(--border); border-radius: 50%;">
+            <span style="font-size: 28px;">📊</span>
+        </div>
+        <div style="flex: 1; z-index: 1;">
+            <h4 style="margin: 0 0 4px 0; font-size: 1.05rem; font-weight: 700; color: var(--text-main);">Volatility Index</h4>
+            <p id="vix-desc" style="margin: 0; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">Volatility measure for the current market mode.</p>
+            <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
+                <span id="vix-badge" style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 800; background-color: rgba(142, 166, 186, 0.15); color: #8ea6ba; border: 1px solid rgba(142, 166, 186, 0.3);">Moderate Volatility</span>
+                <span id="vix-score" style="font-size: 0.85rem; font-weight: 700; color: var(--text-main);">15.00</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Region filter tabs & Engine Status -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
+    <div class="filter-tabs" style="display: flex; gap: 10px;">
+        <button class="filter-btn active" data-region="ALL" style="padding: 8px 18px; border-radius: 99px; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.2s ease; background-color: var(--primary); color: white; border: none; outline: none; box-shadow: 0 0 10px rgba(81, 101, 101, 0.3);">🌍 All News</button>
+        <button class="filter-btn" data-region="INDIAN" style="padding: 8px 18px; border-radius: 99px; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.2s ease; background-color: var(--bg-panel); color: var(--text-muted); border: 1px solid var(--border); outline: none;">🇮🇳 Indian Markets</button>
+        <button class="filter-btn" data-region="GLOBAL" style="padding: 8px 18px; border-radius: 99px; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.2s ease; background-color: var(--bg-panel); color: var(--text-muted); border: 1px solid var(--border); outline: none;">🌐 Global Markets</button>
+    </div>
+    
+    <div style="display: flex; align-items: center; gap: 8px; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 6px 12px; font-size: 0.75rem; font-weight: 700; color: #a5b4fc;">
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px #10b981;"></span>
+        Classification Engine: <strong>Naive Bayes ML Active</strong>
+    </div>
+</div>
+
+<div class="card" id="news-loading-card" style="text-align: center; padding: 40px 20px;">
+    <div class="spinner" style="margin: 0 auto 15px auto;"></div>
+    <p>Loading latest news feed...</p>
+</div>
+
+<div id="news-container" class="news-grid" style="display: none;">
+    <!-- News items will be loaded dynamically here -->
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allNewsItems = [];
+    let activeRegion = 'ALL';
+
+    function getSentimentDetails(label) {
+        switch ((label || 'NEUTRAL').toUpperCase()) {
+            case 'BULLISH':
+                return {
+                    color: '#10b981', // green
+                    glow: 'rgba(16, 185, 129, 0.15)',
+                    text: 'Bullish Sentiment',
+                    emoji: '📈',
+                    desc: 'Positive news flow dominates. Buyers are in control.'
+                };
+            case 'BEARISH':
+                return {
+                    color: '#f43f5e', // red
+                    glow: 'rgba(244, 63, 94, 0.15)',
+                    text: 'Bearish Sentiment',
+                    emoji: '📉',
+                    desc: 'Negative news flow dominates. Selling pressure persists.'
+                };
+            case 'NEUTRAL':
+            default:
+                return {
+                    color: '#f59e0b', // yellow
+                    glow: 'rgba(245, 158, 11, 0.15)',
+                    text: 'Neutral Sentiment',
+                    emoji: '⚖️',
+                    desc: 'Balanced news flow. Market searching for direction.'
+                };
+        }
+    }
+
+    function getVixDetails(score) {
+        if (score < 15) {
+            return {
+                rating: 'Low Volatility',
+                color: '#10b981', // green
+                glow: 'rgba(16, 185, 129, 0.15)',
+                desc: 'Market is calm. Complacency or stable trend expected.'
+            };
+        } else if (score < 22) {
+            return {
+                rating: 'Moderate Volatility',
+                color: '#8ea6ba', // blue-grey accent
+                glow: 'rgba(142, 166, 186, 0.15)',
+                desc: 'Normal market movement. Standard fluctuation levels.'
+            };
+        } else if (score < 30) {
+            return {
+                rating: 'Elevated Panic',
+                color: '#f59e0b', // yellow
+                glow: 'rgba(245, 158, 11, 0.15)',
+                desc: 'Increased caution. Market showing signs of fear.'
+            };
+        } else {
+            return {
+                rating: 'Extreme Stress',
+                color: '#f43f5e', // red
+                glow: 'rgba(244, 63, 94, 0.15)',
+                desc: 'High panic! Market under significant distress.'
+            };
+        }
+    }
+
+    function filterAndRenderNews() {
+        const mode = localStorage.getItem('trading_mode') || 'equity';
+        const container = document.getElementById('news-container');
+        container.innerHTML = '';
+
+        const filtered = allNewsItems.filter(item => {
+            if (activeRegion === 'ALL') return true;
+            const region = (item.region || 'Global').toUpperCase();
+            return region === activeRegion;
+        });
+
+        if (filtered.length > 0) {
+            filtered.forEach(item => {
+                const card = document.createElement('a');
+                card.className = 'news-card';
+                card.href = item.link;
+                card.target = '_blank';
+                
+                let dateStr = item.pub_date;
+                try {
+                    const date = new Date(item.pub_date);
+                    if (!isNaN(date.getTime())) {
+                        dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    }
+                } catch(e) {}
+
+                const regionLabel = item.region || 'Global';
+                const regionColor = regionLabel === 'Indian' ? '#f97316' : '#3b82f6';
+                const regionBg = regionLabel === 'Indian' ? 'rgba(249, 115, 22, 0.1)' : 'rgba(59, 130, 246, 0.1)';
+                const regionBorder = regionLabel === 'Indian' ? 'rgba(249, 115, 22, 0.25)' : 'rgba(59, 130, 246, 0.25)';
+
+                const method = item.method || 'Default Source';
+                const confidencePercent = Math.round((item.confidence || 1.0) * 100);
+                const infoText = method === 'Rule Override' ? 'Rule Override' : `ML Classifier (${confidencePercent}%)`;
+                const infoColor = method === 'Rule Override' ? '#10b981' : '#a855f7';
+                const infoBg = method === 'Rule Override' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(168, 85, 247, 0.08)';
+                const infoBorder = method === 'Rule Override' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(168, 85, 247, 0.2)';
+
+                card.innerHTML = `
+                    <div class="news-header">
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                            <span class="news-badge">${mode.toUpperCase()}</span>
+                            <span class="news-badge" style="background-color: ${regionBg}; color: ${regionColor}; border-color: ${regionBorder}; font-weight: 700;">${regionLabel}</span>
+                            <span class="news-badge" style="background-color: ${infoBg}; color: ${infoColor}; border-color: ${infoBorder}; font-weight: 600; font-size: 0.72rem; text-transform: none; padding: 4px 8px;">${infoText}</span>
+                        </div>
+                        <span class="news-date">${dateStr}</span>
+                    </div>
+                    <h3 class="news-title">${item.title}</h3>
+                    <p class="news-desc">${item.description}</p>
+                    <div class="news-footer">Read article →</div>
+                `;
+                container.appendChild(card);
+            });
+            container.style.display = 'grid';
+        } else {
+            container.innerHTML = `
+                <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-muted);">
+                    <p style="font-size: 1.2rem; margin-bottom: 8px;">📭 No News Available</p>
+                    <p style="font-size: 0.9rem;">There are no ${activeRegion === 'INDIAN' ? 'Indian' : 'Global'} market news items in this feed right now.</p>
+                </div>
+            `;
+            container.style.display = 'block';
+        }
+    }
+
+    async function loadNews() {
+        const mode = localStorage.getItem('trading_mode') || 'equity';
+        const loadingCard = document.getElementById('news-loading-card');
+        const container = document.getElementById('news-container');
+        const dashboard = document.getElementById('news-dashboard');
+        
+        loadingCard.style.display = 'block';
+        container.style.display = 'none';
+        dashboard.style.display = 'none';
+        
+        try {
+            const res = await fetch('/api/news?mode=' + mode);
+            const data = await res.json();
+            
+            if (data.news && data.news.length > 0) {
+                allNewsItems = data.news;
+                
+                // Update Dashboard
+                // VIX Score
+                const vixScore = data.vix_score !== undefined ? data.vix_score : 15.0;
+                const vixDetails = getVixDetails(vixScore);
+                document.getElementById('vix-score').innerText = vixScore.toFixed(2);
+                const vixBadge = document.getElementById('vix-badge');
+                vixBadge.innerText = vixDetails.rating;
+                vixBadge.style.backgroundColor = vixDetails.glow;
+                vixBadge.style.color = vixDetails.color;
+                vixBadge.style.borderColor = vixDetails.color + '40';
+                document.getElementById('vix-glow').style.background = vixDetails.glow;
+                
+                // Sentiment
+                const sentiment = data.sentiment || { score: 0.0, label: 'NEUTRAL' };
+                const sentimentDetails = getSentimentDetails(sentiment.label);
+                document.getElementById('sentiment-score').innerText = (sentiment.score > 0 ? '+' : '') + sentiment.score.toFixed(2);
+                document.getElementById('sentiment-emoji').innerText = sentimentDetails.emoji;
+                document.getElementById('sentiment-desc').innerText = sentimentDetails.desc;
+                
+                const sentimentBadge = document.getElementById('sentiment-badge');
+                sentimentBadge.innerText = sentiment.label;
+                sentimentBadge.style.backgroundColor = sentimentDetails.glow;
+                sentimentBadge.style.color = sentimentDetails.color;
+                sentimentBadge.style.borderColor = sentimentDetails.color + '40';
+                document.getElementById('sentiment-glow').style.background = sentimentDetails.glow;
+                
+                dashboard.style.display = 'grid';
+                loadingCard.style.display = 'none';
+                
+                filterAndRenderNews();
+            } else {
+                loadingCard.innerHTML = `<p>⚠️ No news items available at the moment. Try switching modes or refreshing.</p>`;
+            }
+        } catch (e) {
+            loadingCard.innerHTML = `<p style="color: var(--danger)">❌ Error loading news feed: ${e.message}</p>`;
+        }
+    }
+
+    // Set up filter buttons events
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.filter-btn').forEach(b => {
+                b.classList.remove('active');
+                b.style.backgroundColor = 'var(--bg-panel)';
+                b.style.color = 'var(--text-muted)';
+                b.style.border = '1px solid var(--border)';
+                b.style.boxShadow = 'none';
+            });
+            
+            btn.classList.add('active');
+            btn.style.backgroundColor = 'var(--primary)';
+            btn.style.color = 'white';
+            btn.style.border = 'none';
+            btn.style.boxShadow = '0 0 10px rgba(81, 101, 101, 0.3)';
+            
+            activeRegion = btn.getAttribute('data-region');
+            filterAndRenderNews();
+        });
+    });
+
+    // Load news on page load
+    document.addEventListener('DOMContentLoaded', loadNews);
+    
+    // Refresh news when trading mode changes
+    window.addEventListener('tradingModeChanged', loadNews);
+</script>
+{% endblock %}
