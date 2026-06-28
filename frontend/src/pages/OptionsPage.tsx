@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import api from '../api'
 import Plot from 'react-plotly.js'
+import { TickerSearch } from '../components/TickerSearch'
 
 interface ChainRow {
   strike: number
@@ -90,14 +91,15 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
       <div className="panel" style={{ marginBottom: '24px', padding: '20px', background: 'var(--bg-panel)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
         <h2 style={{ fontSize: '18px', marginTop: 0, marginBottom: '16px' }}>🔗 Options Chain (Theoretical Pricing)</h2>
         <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-          <input
-            type="text"
-            value={symbol}
-            onChange={(e) => setSymbol(e.target.value)}
-            placeholder="e.g. NSE:NIFTY 50"
-            className="input-base"
-            style={{ width: '200px' }}
-          />
+          <div style={{ position: 'relative' }}>
+            <TickerSearch
+              value={symbol}
+              onChange={setSymbol}
+              mode={mode}
+              placeholder="Search Underlying..."
+              style={{ width: '240px' }}
+            />
+          </div>
           <select 
             value={assetClass} 
             onChange={(e) => setAssetClass(e.target.value)} 
