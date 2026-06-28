@@ -113,7 +113,6 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
             <option value="forex">Forex (Garman-Kohlhagen)</option>
             <option value="commodity">Commodity (Black-76)</option>
           </select>
-            </select>
           </div>
 
           <div className="form-row" style={{ marginBottom: 0 }}>
