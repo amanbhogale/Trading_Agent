@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import api from '../api'
 import Plot from 'react-plotly.js'
 import { TickerSearch } from '../components/TickerSearch'
@@ -28,6 +28,21 @@ interface RiskResponse {
   error?: string
 }
 
+interface HedgingPosition {
+  id: number
+  symbol: string
+  option_type: string
+  strike: number
+  expiry: string | null
+  quantity: number
+}
+
+interface HedgeStatus {
+  is_active: boolean
+  net_delta: number
+  recent_trades: any[]
+}
+
 interface OptionsPageProps {
   mode: string
 }
@@ -43,6 +58,49 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
   const [sigma, setSigma] = useState(0.20)
   const [riskData, setRiskData] = useState<RiskResponse | null>(null)
   const [loadingRisk, setLoadingRisk] = useState(false)
+
+  const [positions, setPositions] = useState<HedgingPosition[]>([])
+  const [hedgeStatus, setHedgeStatus] = useState<HedgeStatus | null>(null)
+  
+  const [mockType, setMockType] = useState('call')
+  const [mockStrike, setMockStrike] = useState(25000)
+  const [mockQty, setMockQty] = useState(100)
+
+  useEffect(() => {
+    fetchPortfolio()
+    const intv = setInterval(fetchStatus, 3000)
+    return () => clearInterval(intv)
+  }, [])
+
+  const fetchPortfolio = async () => {
+    try {
+      const res = await api.get<HedgingPosition[]>('/options/portfolio')
+      setPositions(res.data)
+    } catch(e) {}
+  }
+
+  const fetchStatus = async () => {
+    try {
+      const res = await api.get<HedgeStatus>('/options/hedge_status')
+      setHedgeStatus(res.data)
+    } catch(e) {}
+  }
+
+  const addMockPosition = async () => {
+    await api.post('/options/portfolio', { symbol, option_type: mockType, strike: mockStrike, quantity: mockQty })
+    fetchPortfolio()
+  }
+
+  const removePosition = async (id: number) => {
+    await api.delete('/options/portfolio', { data: { id } })
+    fetchPortfolio()
+  }
+
+  const toggleEngine = async () => {
+    if (!hedgeStatus) return
+    await api.post('/options/hedge_status', { active: !hedgeStatus.is_active })
+    fetchStatus()
+  }
 
   const fetchChain = async () => {
     setLoadingChain(true)
@@ -244,6 +302,107 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
             )}
           </div>
         )}
+      </div>
+
+      {/* Dynamic Hedging Dashboard */}
+      <div className="card" style={{ padding: '20px', marginTop: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div>
+            <h2 style={{ fontSize: '18px', marginTop: 0, marginBottom: '8px' }}>🛡️ Dynamic Delta Hedging (Paper Trading)</h2>
+            <p className="page-subtitle" style={{ margin: 0 }}>
+              Automated algorithmic portfolio hedging. Engine automatically simulates buying/selling Futures to keep Net Delta near zero.
+            </p>
+          </div>
+          <div>
+            <button 
+              onClick={toggleEngine} 
+              className="btn" 
+              style={{ 
+                background: hedgeStatus?.is_active ? 'var(--danger)' : 'var(--success)', 
+                color: '#fff', border: 'none', fontWeight: 'bold' 
+              }}>
+              {hedgeStatus?.is_active ? 'STOP ENGINE' : 'START ENGINE'}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-2" style={{ gap: 20 }}>
+          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+            <h3 style={{ fontSize: '14px', marginTop: 0, marginBottom: '12px' }}>Current Portfolio Net Delta</h3>
+            <div style={{ fontSize: '32px', fontWeight: 'bold', color: hedgeStatus && Math.abs(hedgeStatus.net_delta) > 0.5 ? 'var(--warning)' : 'var(--success)' }}>
+              {hedgeStatus?.net_delta.toFixed(3) || '0.000'} Δ
+            </div>
+            
+            <h3 style={{ fontSize: '14px', marginTop: '20px', marginBottom: '12px' }}>Recent Hedge Executions</h3>
+            {hedgeStatus?.recent_trades && hedgeStatus.recent_trades.length > 0 ? (
+              <table className="data-table" style={{ width: '100%', fontSize: '12px', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                    <th>Time</th><th>Action</th><th>Symbol</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hedgeStatus.recent_trades.map((t, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '6px' }}>{new Date(t.executed_at).toLocaleTimeString()}</td>
+                      <td style={{ padding: '6px', fontWeight: 'bold', color: t.trade_type === 'BUY' ? 'var(--success)' : 'var(--danger)' }}>{t.trade_type} {t.quantity}</td>
+                      <td style={{ padding: '6px' }}>{t.symbol}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>No recent trades executed.</p>}
+          </div>
+
+          <div>
+            <h3 style={{ fontSize: '14px', marginTop: 0, marginBottom: '12px' }}>Mock Portfolio Positions</h3>
+            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr auto', gap: 10, alignItems: 'flex-end', marginBottom: '16px' }}>
+              <div className="form-row" style={{ marginBottom: 0 }}>
+                <label className="form-label">Type</label>
+                <select className="form-select" value={mockType} onChange={e => setMockType(e.target.value)}>
+                  <option value="call">Call</option>
+                  <option value="put">Put</option>
+                </select>
+              </div>
+              <div className="form-row" style={{ marginBottom: 0 }}>
+                <label className="form-label">Strike</label>
+                <input type="number" className="form-input" value={mockStrike} onChange={e => setMockStrike(Number(e.target.value))} />
+              </div>
+              <div className="form-row" style={{ marginBottom: 0 }}>
+                <label className="form-label">Qty</label>
+                <input type="number" className="form-input" value={mockQty} onChange={e => setMockQty(Number(e.target.value))} />
+              </div>
+              <div className="form-row" style={{ marginBottom: 0 }}>
+                <button className="btn btn-primary" onClick={addMockPosition} style={{ height: '36px' }}>+ Add</button>
+              </div>
+            </div>
+
+            <table className="data-table" style={{ width: '100%', fontSize: '12px', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                  <th style={{ padding: '6px' }}>Symbol</th>
+                  <th style={{ padding: '6px' }}>Type</th>
+                  <th style={{ padding: '6px' }}>Strike</th>
+                  <th style={{ padding: '6px' }}>Qty</th>
+                  <th style={{ padding: '6px' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {positions.map(p => (
+                  <tr key={p.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                    <td style={{ padding: '6px' }}>{p.symbol}</td>
+                    <td style={{ padding: '6px' }}>{p.option_type.toUpperCase()}</td>
+                    <td style={{ padding: '6px' }}>{p.strike || '-'}</td>
+                    <td style={{ padding: '6px', fontWeight: 'bold', color: p.quantity > 0 ? 'var(--success)' : 'var(--danger)' }}>{p.quantity}</td>
+                    <td style={{ padding: '6px', textAlign: 'right' }}>
+                      <button onClick={() => removePosition(p.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '14px' }}>✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   )

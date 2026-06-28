@@ -2161,6 +2161,71 @@ def api_options_risk():
     except Exception as e:
         logger.exception("Options risk failed")
         return jsonify({"error": str(e)}), 500
+@app.route('/api/options/portfolio', methods=['GET', 'POST', 'DELETE'])
+def api_options_portfolio():
+    try:
+        import psycopg2
+        from trading_system.memory import DB_CONFIG
+        conn = psycopg2.connect(**DB_CONFIG)
+        conn.autocommit = True
+        cur = conn.cursor()
+        
+        if request.method == 'GET':
+            cur.execute("SELECT id, symbol, option_type, strike, expiry, quantity FROM hedging_positions ORDER BY added_at DESC")
+            rows = cur.fetchall()
+            positions = [{"id": r[0], "symbol": r[1], "option_type": r[2], "strike": float(r[3]), "expiry": str(r[4]) if r[4] else None, "quantity": r[5]} for r in rows]
+            return jsonify(positions)
+            
+        elif request.method == 'POST':
+            data = request.json or {}
+            cur.execute("""
+                INSERT INTO hedging_positions (symbol, option_type, strike, expiry, quantity)
+                VALUES (%s, %s, %s, %s, %s) RETURNING id
+            """, (data['symbol'], data['option_type'], data['strike'], data.get('expiry'), data['quantity']))
+            new_id = cur.fetchone()[0]
+            return jsonify({"success": True, "id": new_id})
+            
+        elif request.method == 'DELETE':
+            data = request.json or {}
+            cur.execute("DELETE FROM hedging_positions WHERE id = %s", (data['id'],))
+            return jsonify({"success": True})
+            
+    except Exception as e:
+        logger.exception("Options portfolio API failed")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if 'cur' in locals(): cur.close()
+        if 'conn' in locals(): conn.close()
+
+@app.route('/api/options/hedge_status', methods=['GET', 'POST'])
+def api_options_hedge_status():
+    try:
+        from src.trading_system.hedging_engine import hedger
+        if request.method == 'POST':
+            data = request.json or {}
+            active = data.get('active', False)
+            hedger.set_active(active)
+            return jsonify({"success": True, "is_active": hedger.is_active})
+            
+        import psycopg2
+        from trading_system.memory import DB_CONFIG
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor()
+        cur.execute("SELECT symbol, trade_type, quantity, price, executed_at FROM hedge_trades ORDER BY executed_at DESC LIMIT 10")
+        rows = cur.fetchall()
+        trades = [{"symbol": r[0], "trade_type": r[1], "quantity": r[2], "price": float(r[3]), "executed_at": r[4].isoformat()} for r in rows]
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            "is_active": getattr(hedger, 'is_active', False),
+            "net_delta": getattr(hedger, 'last_net_delta', 0.0),
+            "recent_trades": trades
+        })
+    except Exception as e:
+        logger.exception("Hedge status API failed")
+        return jsonify({"error": str(e)}), 500
+
 
 
 def run_db_migrations():
@@ -2219,6 +2284,12 @@ def init_yahoo_websocket_tickers():
 init_yahoo_websocket_tickers()
 
 if __name__ == '__main__':
+    try:
+        from src.trading_system.hedging_engine import hedger
+        hedger.start()
+    except Exception as e:
+        logger.error(f"Failed to start Hedging Engine: {e}")
+
     # Run the Flask app
     app.run(debug=True, host='0.0.0.0', port=5000)
 

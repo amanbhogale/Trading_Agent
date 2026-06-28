@@ -59,6 +59,30 @@ def init_db():
     );
     """)
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS hedging_positions (
+        id SERIAL PRIMARY KEY,
+        symbol VARCHAR(50) NOT NULL,
+        option_type VARCHAR(10) NOT NULL,
+        strike NUMERIC NOT NULL,
+        expiry DATE,
+        quantity INTEGER NOT NULL,
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS hedge_trades (
+        id SERIAL PRIMARY KEY,
+        symbol VARCHAR(50) NOT NULL,
+        trade_type VARCHAR(10) NOT NULL,
+        quantity INTEGER NOT NULL,
+        price NUMERIC NOT NULL,
+        net_delta_before NUMERIC,
+        executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     # --- New Tickers Classification Table ---
     cur.execute("""
     CREATE TABLE IF NOT EXISTS tickers_classification (
