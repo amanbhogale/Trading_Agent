@@ -80,38 +80,47 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
   }
 
   return (
-    <div className="page" style={{ padding: '20px' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ margin: 0, fontSize: '24px' }}>📈 Options & Derivatives Desk</h1>
-        <p style={{ color: 'var(--text-muted)' }}>
+    <div className="page animate-fade-up" style={{ padding: '20px' }}>
+      <div className="page-header">
+        <h1 className="page-title">📈 Options & Derivatives Desk</h1>
+        <p className="page-subtitle">
           Advanced Quantitative Models: Black-Scholes (Equity), Garman-Kohlhagen (Forex), Black-76 (Commodities), and Monte Carlo (VaR).
         </p>
       </div>
 
-      <div className="panel" style={{ marginBottom: '24px', padding: '20px', background: 'var(--bg-panel)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+      <div className="card" style={{ marginBottom: 24, overflow: 'visible' }}>
         <h2 style={{ fontSize: '18px', marginTop: 0, marginBottom: '16px' }}>🔗 Options Chain (Theoretical Pricing)</h2>
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-          <div style={{ position: 'relative' }}>
+        <div className="grid" style={{ gridTemplateColumns: '2fr 1fr auto', gap: 14, alignItems: 'flex-end', marginBottom: '16px' }}>
+          <div className="form-row" style={{ marginBottom: 0 }}>
+            <label className="form-label">Underlying Asset</label>
             <TickerSearch
               value={symbol}
               onChange={setSymbol}
               mode={mode}
               placeholder="Search Underlying..."
-              style={{ width: '240px' }}
+              style={{ width: '100%' }}
             />
           </div>
-          <select 
-            value={assetClass} 
-            onChange={(e) => setAssetClass(e.target.value)} 
-            className="input-base"
-          >
+          
+          <div className="form-row" style={{ marginBottom: 0 }}>
+            <label className="form-label">Pricing Model</label>
+            <select 
+              value={assetClass} 
+              onChange={(e) => setAssetClass(e.target.value)} 
+              className="form-select"
+            >
             <option value="equity">Equity (Black-Scholes)</option>
             <option value="forex">Forex (Garman-Kohlhagen)</option>
             <option value="commodity">Commodity (Black-76)</option>
           </select>
-          <button onClick={fetchChain} className="btn-primary" disabled={loadingChain}>
-            {loadingChain ? 'Running Models...' : 'Calculate Prices & Greeks'}
-          </button>
+            </select>
+          </div>
+
+          <div className="form-row" style={{ marginBottom: 0 }}>
+            <button onClick={fetchChain} className="btn btn-primary" disabled={loadingChain} style={{ height: '36px' }}>
+              {loadingChain ? <><span className="spinner" /> Running...</> : 'Calculate Greeks'}
+            </button>
+          </div>
         </div>
 
         {chainData && (
@@ -152,24 +161,33 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
         )}
       </div>
 
-      <div className="panel" style={{ padding: '20px', background: 'var(--bg-panel)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
-        <h2 style={{ fontSize: '18px', marginTop: 0, marginBottom: '16px' }}>🎲 Portfolio Risk (Monte Carlo VaR)</h2>
-        <p style={{ color: 'var(--text-muted)' }}>
+      <div className="card" style={{ padding: '20px' }}>
+        <h2 style={{ fontSize: '18px', marginTop: 0, marginBottom: '8px' }}>🎲 Portfolio Risk (Monte Carlo VaR)</h2>
+        <p className="page-subtitle" style={{ marginBottom: '16px' }}>
           Simulate 5,000 paths over 1 year (252 trading days) using Geometric Brownian Motion to find the 99% Value at Risk.
         </p>
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
-          <label style={{ fontSize: '12px', fontWeight: 600 }}>Portfolio Value:</label>
-          <input type="number" value={portVal} onChange={(e) => setPortVal(Number(e.target.value))} className="input-base" style={{ width: '120px' }} />
+
+        <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr auto', gap: 14, alignItems: 'flex-end', marginBottom: '16px' }}>
+          <div className="form-row" style={{ marginBottom: 0 }}>
+            <label className="form-label">Portfolio Value (₹)</label>
+            <input type="number" value={portVal} onChange={(e) => setPortVal(Number(e.target.value))} className="form-input" />
+          </div>
           
-          <label style={{ fontSize: '12px', fontWeight: 600 }}>Return (μ):</label>
-          <input type="number" step="0.01" value={mu} onChange={(e) => setMu(Number(e.target.value))} className="input-base" style={{ width: '80px' }} />
+          <div className="form-row" style={{ marginBottom: 0 }}>
+            <label className="form-label">Expected Return (μ)</label>
+            <input type="number" step="0.01" value={mu} onChange={(e) => setMu(Number(e.target.value))} className="form-input" />
+          </div>
           
-          <label style={{ fontSize: '12px', fontWeight: 600 }}>Volatility (σ):</label>
-          <input type="number" step="0.01" value={sigma} onChange={(e) => setSigma(Number(e.target.value))} className="input-base" style={{ width: '80px' }} />
+          <div className="form-row" style={{ marginBottom: 0 }}>
+            <label className="form-label">Volatility (σ)</label>
+            <input type="number" step="0.01" value={sigma} onChange={(e) => setSigma(Number(e.target.value))} className="form-input" />
+          </div>
           
-          <button onClick={fetchRisk} className="btn-primary" disabled={loadingRisk}>
-            {loadingRisk ? 'Simulating 5,000 paths...' : 'Run Simulation'}
-          </button>
+          <div className="form-row" style={{ marginBottom: 0 }}>
+            <button onClick={fetchRisk} className="btn btn-primary" disabled={loadingRisk} style={{ height: '36px' }}>
+              {loadingRisk ? <><span className="spinner" /> Simulating...</> : 'Run Simulation'}
+            </button>
+          </div>
         </div>
         
         {riskData && (
