@@ -1992,6 +1992,85 @@ def api_predict_model():
     except Exception as e:
         logger.exception("Model prediction endpoint failed")
         return jsonify({"error": str(e)}), 500
+# ==========================================
+# OPTIONS DESK API ROUTES
+# ==========================================
+
+from src.options_engine import BlackScholesPricer, GarmanKohlhagenPricer, Black76Pricer, GreeksCalculator, MonteCarloSimulator
+
+@app.route('/options')
+def options_desk():
+    return render_template('options.html')
+
+@app.route('/api/options/chain', methods=['POST'])
+def api_options_chain():
+    try:
+        data = request.json or {}
+        symbol = data.get('symbol', 'NSE:NIFTY 50')
+        asset_class = data.get('asset_class', 'equity') # equity, forex, commodity
+        
+        # Mocking an options chain for now since we don't have a live options data feed yet
+        import numpy as np
+        spot_price = 25000 if asset_class == 'equity' else 1.10
+        volatility = 0.15 # 15% IV
+        r_d = 0.05 # 5% Risk Free Rate
+        r_f = 0.02 # For Forex
+        time_to_expiry = 30 / 365 # 30 days
+        
+        strikes = np.linspace(spot_price * 0.9, spot_price * 1.1, 11)
+        chain = []
+        
+        for K in strikes:
+            if asset_class == 'forex':
+                c_price = GarmanKohlhagenPricer.price(spot_price, K, time_to_expiry, r_d, r_f, volatility, 'call')
+                p_price = GarmanKohlhagenPricer.price(spot_price, K, time_to_expiry, r_d, r_f, volatility, 'put')
+                cgreeks = GreeksCalculator.calculate_greeks(spot_price, K, time_to_expiry, r_d, volatility, 'call', q=r_f)
+            elif asset_class == 'commodity':
+                c_price = Black76Pricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'call')
+                p_price = Black76Pricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'put')
+                cgreeks = GreeksCalculator.calculate_greeks(spot_price, K, time_to_expiry, r_d, volatility, 'call')
+            else: # equity
+                c_price = BlackScholesPricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'call')
+                p_price = BlackScholesPricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'put')
+                cgreeks = GreeksCalculator.calculate_greeks(spot_price, K, time_to_expiry, r_d, volatility, 'call')
+                
+            chain.append({
+                "strike": round(K, 2),
+                "call_price": round(c_price, 2),
+                "put_price": round(p_price, 2),
+                "delta": round(cgreeks['delta'], 3),
+                "gamma": round(cgreeks['gamma'], 4),
+                "theta": round(cgreeks['theta'], 3),
+                "vega": round(cgreeks['vega'], 3)
+            })
+            
+        return jsonify({"symbol": symbol, "spot": spot_price, "chain": chain})
+    except Exception as e:
+        logger.exception("Options chain failed")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/options/risk', methods=['POST'])
+def api_options_risk():
+    try:
+        data = request.json or {}
+        portfolio_value = data.get('portfolio_value', 100000)
+        mu = data.get('mu', 0.1) # 10% expected return
+        sigma = data.get('sigma', 0.2) # 20% volatility
+        
+        # Simulate 1 year (252 days)
+        paths = MonteCarloSimulator.simulate_paths(portfolio_value, mu, sigma, 1.0, 252, 5000)
+        final_values = paths[-1, :]
+        
+        var_metrics = MonteCarloSimulator.calculate_var(portfolio_value, final_values)
+        
+        return jsonify({
+            "VaR_99": round(var_metrics['VaR'], 2),
+            "CVaR_99": round(var_metrics['CVaR'], 2),
+            "simulated_worst_case": round(portfolio_value - var_metrics['VaR'], 2)
+        })
+    except Exception as e:
+        logger.exception("Options risk failed")
+        return jsonify({"error": str(e)}), 500
 
 
 def run_db_migrations():

@@ -17,6 +17,7 @@
         <a href="{{ url_for('backtest') }}" class="nav-link {% if request.endpoint == 'backtest' %}active{% endif %}">🧪 Backtest</a>
         <a href="{{ url_for('portfolio') }}" class="nav-link {% if request.endpoint == 'portfolio' %}active{% endif %}">💼 Portfolio</a>
         <a href="{{ url_for('news') }}" class="nav-link {% if request.endpoint == 'news' %}active{% endif %}">📰 News Feed</a>
+        <a href="{{ url_for('options_desk') }}" class="nav-link {% if request.endpoint == 'options_desk' %}active{% endif %}">📈 Options Desk</a>
     </nav>
     <main class="content">
         <header class="top-header">
