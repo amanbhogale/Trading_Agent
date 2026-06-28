@@ -2115,47 +2115,58 @@ def api_options_chain():
 @app.route('/api/options/risk', methods=['POST'])
 def api_options_risk():
     try:
+        import datetime
         data = request.json or {}
-        portfolio_value = data.get('portfolio_value', 100000)
         mu = data.get('mu', 0.1) # 10% expected return
         sigma = data.get('sigma', 0.2) # 20% volatility
         
-        # Simulate 1 year (252 days)
-        paths = MonteCarloSimulator.simulate_paths(portfolio_value, mu, sigma, 1.0, 252, 5000)
+        import psycopg2
+        from src.trading_system.memory import DB_CONFIG
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor()
+        cur.execute("SELECT symbol, option_type, strike, expiry, quantity FROM hedging_positions")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        if not rows:
+            return jsonify({
+                "VaR_99": 0.0, "CVaR_99": 0.0, "simulated_worst_case": 0.0, 
+                "current_portfolio_value": 0.0, "plot_paths": []
+            })
+            
+        positions = []
+        for r in rows:
+            positions.append({
+                'symbol': r[0], 'type': r[1], 'strike': float(r[2]), 
+                'tte': max((r[3] - datetime.date.today()).days / 365.0, 1e-5) if r[3] else (30/365.0),
+                'qty': r[4]
+            })
+            
+        symbol = positions[0]['symbol'].replace('-FUT', '')
+        
+        from src.trading_system.hedging_engine import hedger
+        spot_price = hedger._get_spot_price(symbol)
+        
+        # Simulate 30 days forward for VaR
+        sim_days = 30
+        paths = MonteCarloSimulator.simulate_paths(spot_price, mu, sigma, sim_days/365.0, sim_days, 5000)
         final_values = paths[-1, :]
         
-        var_metrics = MonteCarloSimulator.calculate_var(portfolio_value, final_values)
+        var_metrics = MonteCarloSimulator.calculate_options_var(
+            current_spot=spot_price, 
+            simulated_final_values=final_values, 
+            positions=positions, 
+            horizon_days=sim_days
+        )
         
-        import psycopg2
-        import json
-        import datetime
-        try:
-            from src.trading_system.memory import DB_CONFIG
-            conn = psycopg2.connect(**DB_CONFIG)
-            conn.autocommit = True
-            with conn.cursor() as cur:
-                vis_name = f"mc_var_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-                vis_meta = json.dumps({
-                    'portfolio_value': portfolio_value, 'mu': mu, 'sigma': sigma, 
-                    'var': round(var_metrics['VaR'], 2), 'cvar': round(var_metrics['CVaR'], 2)
-                })
-                cur.execute("""
-                    INSERT INTO visualizations (name, meta, saved_at) 
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (name) DO UPDATE SET meta=EXCLUDED.meta, saved_at=EXCLUDED.saved_at
-                """, (vis_name, vis_meta, datetime.datetime.now()))
-            conn.close()
-        except Exception as db_e:
-            logger.warning(f"Failed to log MC risk to DB: {db_e}")
-
-        # Subsample 50 paths for Plotly visualization
-        # paths is shape (252, 5000). Transpose to (5000, 252) and grab first 50.
         plot_paths = paths.T[:50, :].tolist()
         
         return jsonify({
             "VaR_99": round(var_metrics['VaR'], 2),
             "CVaR_99": round(var_metrics['CVaR'], 2),
-            "simulated_worst_case": round(portfolio_value - var_metrics['VaR'], 2),
+            "simulated_worst_case": round(var_metrics['simulated_worst_case'], 2),
+            "current_portfolio_value": round(var_metrics['current_portfolio_value'], 2),
             "plot_paths": plot_paths
         })
     except Exception as e:

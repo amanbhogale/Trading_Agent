@@ -108,13 +108,47 @@ class MonteCarloSimulator:
         return paths
 
     @staticmethod
-    def calculate_var(portfolio_value, simulated_final_values, confidence_level=0.99):
-        """Calculate Value at Risk based on simulated outcomes."""
-        simulated_pnl = simulated_final_values - portfolio_value
+    def calculate_options_var(current_spot, simulated_final_values, positions, r=0.05, iv=0.15, horizon_days=1, confidence_level=0.99):
+        """
+        Calculate VaR for an Options Portfolio.
+        simulated_final_values: np.array of shape (simulations,) representing spot prices at horizon.
+        positions: list of dicts: [{'type': 'call'|'put'|'future', 'strike': 25000, 'qty': 100, 'tte': 0.1}]
+        horizon_days: how many days forward we are evaluating the risk (defaults to 1 day).
+        """
+        current_port_value = 0.0
+        simulated_port_values = np.zeros_like(simulated_final_values, dtype=float)
+        
+        for pos in positions:
+            opt_type = pos['type'].lower()
+            qty = pos['qty']
+            
+            if opt_type == 'future':
+                current_port_value += current_spot * qty
+                simulated_port_values += simulated_final_values * qty
+                continue
+                
+            K = pos['strike']
+            tte = pos['tte']
+            
+            # Current value of this position
+            c_price = BlackScholesPricer.price(current_spot, K, tte, r, iv, opt_type)
+            current_port_value += c_price * qty
+            
+            # Value at the end of the risk horizon (decayed time to expiry)
+            new_tte = max(tte - (horizon_days / 365.0), 1e-5)
+            s_prices = BlackScholesPricer.price(simulated_final_values, K, new_tte, r, iv, opt_type)
+            simulated_port_values += s_prices * qty
+            
+        simulated_pnl = simulated_port_values - current_port_value
         var = np.percentile(simulated_pnl, (1 - confidence_level) * 100)
-        cvar = simulated_pnl[simulated_pnl <= var].mean() # Expected Shortfall
+        
+        tail_losses = simulated_pnl[simulated_pnl <= var]
+        cvar = tail_losses.mean() if len(tail_losses) > 0 else var
+        
         return {
-            "VaR": abs(var),
-            "CVaR": abs(cvar),
+            "VaR": abs(var) if var < 0 else 0.0,
+            "CVaR": abs(cvar) if cvar < 0 else 0.0,
+            "current_portfolio_value": current_port_value,
+            "simulated_worst_case": current_port_value + (var if var < 0 else 0),
             "confidence": confidence_level
         }

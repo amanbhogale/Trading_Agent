@@ -24,6 +24,7 @@ interface RiskResponse {
   VaR_99: number
   CVaR_99: number
   simulated_worst_case: number
+  current_portfolio_value?: number
   plot_paths?: number[][]
   error?: string
 }
@@ -49,13 +50,12 @@ interface OptionsPageProps {
 
 export default function OptionsPage({ mode }: OptionsPageProps) {
   const [symbol, setSymbol] = useState(mode === 'equity' ? 'NSE:NIFTY 50' : mode === 'forex' ? 'EURUSD=X' : 'BTCUSDT')
-  const [assetClass, setAssetClass] = useState(mode)
+  const [assetClass, setAssetClass] = useState('equity')
   const [chainData, setChainData] = useState<ChainResponse | null>(null)
   const [loadingChain, setLoadingChain] = useState(false)
 
-  const [portVal, setPortVal] = useState(100000)
-  const [mu, setMu] = useState(0.10)
-  const [sigma, setSigma] = useState(0.20)
+  const [mu, setMu] = useState(0.1)
+  const [sigma, setSigma] = useState(0.2)
   const [riskData, setRiskData] = useState<RiskResponse | null>(null)
   const [loadingRisk, setLoadingRisk] = useState(false)
 
@@ -124,7 +124,6 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
     setRiskData(null)
     try {
       const res = await api.post<RiskResponse>('/options/risk', {
-        portfolio_value: portVal,
         mu,
         sigma
       })
@@ -219,38 +218,37 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
       </div>
 
       <div className="card" style={{ padding: '20px' }}>
-        <h2 style={{ fontSize: '18px', marginTop: 0, marginBottom: '8px' }}>🎲 Portfolio Risk (Monte Carlo VaR)</h2>
+        <h2 style={{ fontSize: '18px', marginTop: 0, marginBottom: '8px' }}>🎲 True Portfolio Risk (Non-Linear VaR)</h2>
         <p className="page-subtitle" style={{ marginBottom: '16px' }}>
-          Simulate 5,000 paths over 1 year (252 trading days) using Geometric Brownian Motion to find the 99% Value at Risk.
+          Simulates 5,000 underlying price paths 30 days forward, re-pricing every option in your Mock Portfolio to find the 99% Value at Risk.
         </p>
 
-        <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr auto', gap: 14, alignItems: 'flex-end', marginBottom: '16px' }}>
+        <div className="grid" style={{ gridTemplateColumns: '1fr 1fr auto', gap: 14, alignItems: 'flex-end', marginBottom: '16px' }}>
           <div className="form-row" style={{ marginBottom: 0 }}>
-            <label className="form-label">Portfolio Value (₹)</label>
-            <input type="number" value={portVal} onChange={(e) => setPortVal(Number(e.target.value))} className="form-input" />
-          </div>
-          
-          <div className="form-row" style={{ marginBottom: 0 }}>
-            <label className="form-label">Expected Return (μ)</label>
+            <label className="form-label">Expected Underlying Return (μ)</label>
             <input type="number" step="0.01" value={mu} onChange={(e) => setMu(Number(e.target.value))} className="form-input" />
           </div>
           
           <div className="form-row" style={{ marginBottom: 0 }}>
-            <label className="form-label">Volatility (σ)</label>
+            <label className="form-label">Underlying Volatility (σ)</label>
             <input type="number" step="0.01" value={sigma} onChange={(e) => setSigma(Number(e.target.value))} className="form-input" />
           </div>
           
           <div className="form-row" style={{ marginBottom: 0 }}>
             <button onClick={fetchRisk} className="btn btn-primary" disabled={loadingRisk} style={{ height: '36px' }}>
-              {loadingRisk ? <><span className="spinner" /> Simulating...</> : 'Run Simulation'}
+              {loadingRisk ? <><span className="spinner" /> Simulating...</> : 'Run Portfolio Simulation'}
             </button>
           </div>
         </div>
         
         {riskData && (
-          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
-            <h3 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px' }}>Risk Metrics (99% Confidence)</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
+          <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+            <h3 style={{ fontSize: '14px', marginTop: 0, marginBottom: '12px' }}>Portfolio Risk Metrics (99% Confidence - 30 Days)</h3>
+            <div className="grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gap: 20 }}>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Current Value</div>
+                <div style={{ fontSize: '20px', color: 'var(--text-primary)', fontWeight: 'bold' }}>₹{riskData.current_portfolio_value?.toLocaleString() || '0'}</div>
+              </div>
               <div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Value at Risk (VaR)</div>
                 <div style={{ fontSize: '20px', color: 'var(--text-negative)', fontWeight: 'bold' }}>₹{riskData.VaR_99.toLocaleString()}</div>
@@ -261,7 +259,7 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
               </div>
               <div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Worst-case Value</div>
-                <div style={{ fontSize: '20px', color: 'var(--text-positive)', fontWeight: 'bold' }}>₹{riskData.simulated_worst_case.toLocaleString()}</div>
+                <div style={{ fontSize: '20px', color: 'var(--warning)', fontWeight: 'bold' }}>₹{riskData.simulated_worst_case.toLocaleString()}</div>
               </div>
             </div>
 
