@@ -228,8 +228,14 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
                     paper_bgcolor: 'transparent',
                     plot_bgcolor: 'transparent',
                     showlegend: false,
-                    xaxis: { gridcolor: '#333' },
-                    yaxis: { gridcolor: '#333' }
+                    xaxis: { 
+                      gridcolor: '#333',
+                      tickfont: { color: '#bcc6e5', size: 11 }
+                    },
+                    yaxis: { 
+                      gridcolor: '#333',
+                      tickfont: { color: '#bcc6e5', size: 11 }
+                    }
                   }}
                   useResizeHandler={true}
                   style={{ width: '100%', height: '100%' }}
