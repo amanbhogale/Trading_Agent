@@ -79,7 +79,7 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
   }
 
   return (
-    <div className="page-container" style={{ padding: '20px' }}>
+    <div className="page" style={{ padding: '20px' }}>
       <div style={{ marginBottom: '24px' }}>
         <h1 style={{ margin: 0, fontSize: '24px' }}>📈 Options & Derivatives Desk</h1>
         <p style={{ color: 'var(--text-muted)' }}>
@@ -196,7 +196,10 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
                     y: path,
                     type: 'scatter',
                     mode: 'lines',
-                    line: { width: 1, color: 'rgba(59, 130, 246, 0.3)' },
+                    line: { 
+                      width: 1.5, 
+                      color: `hsla(${(idx * 15) % 360}, 100%, 65%, 0.7)` 
+                    },
                     hoverinfo: 'skip'
                   }))}
                   layout={{
