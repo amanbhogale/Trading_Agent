@@ -2009,42 +2009,105 @@ def api_options_chain():
         symbol = data.get('symbol', 'NSE:NIFTY 50')
         asset_class = data.get('asset_class', 'equity') # equity, forex, commodity
         
-        # Mocking an options chain for now since we don't have a live options data feed yet
         import numpy as np
+        import datetime
+        import pandas as pd
         spot_price = 25000 if asset_class == 'equity' else 1.10
         volatility = 0.15 # 15% IV
         r_d = 0.05 # 5% Risk Free Rate
         r_f = 0.02 # For Forex
         time_to_expiry = 30 / 365 # 30 days
-        
-        strikes = np.linspace(spot_price * 0.9, spot_price * 1.1, 11)
         chain = []
-        
-        for K in strikes:
-            if asset_class == 'forex':
-                c_price = GarmanKohlhagenPricer.price(spot_price, K, time_to_expiry, r_d, r_f, volatility, 'call')
-                p_price = GarmanKohlhagenPricer.price(spot_price, K, time_to_expiry, r_d, r_f, volatility, 'put')
-                cgreeks = GreeksCalculator.calculate_greeks(spot_price, K, time_to_expiry, r_d, volatility, 'call', q=r_f)
-            elif asset_class == 'commodity':
-                c_price = Black76Pricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'call')
-                p_price = Black76Pricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'put')
-                cgreeks = GreeksCalculator.calculate_greeks(spot_price, K, time_to_expiry, r_d, volatility, 'call')
-            else: # equity
-                c_price = BlackScholesPricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'call')
-                p_price = BlackScholesPricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'put')
-                cgreeks = GreeksCalculator.calculate_greeks(spot_price, K, time_to_expiry, r_d, volatility, 'call')
+
+        try:
+            # 1. Try Yahoo Finance First (for options data) 
+            # We'll use yfinance to get the chain and Kite to augment if possible
+            import yfinance as yf
+            yf_symbol = symbol
+            if 'NIFTY' in symbol:
+                yf_symbol = '^NSEI' if 'BANK' not in symbol else '^NSEBANK'
                 
-            chain.append({
-                "strike": round(K, 2),
-                "call_price": round(c_price, 2),
-                "put_price": round(p_price, 2),
-                "delta": round(cgreeks['delta'], 3),
-                "gamma": round(cgreeks['gamma'], 4),
-                "theta": round(cgreeks['theta'], 3),
-                "vega": round(cgreeks['vega'], 3)
-            })
+            ticker = yf.Ticker(yf_symbol)
+            fast_info = ticker.fast_info
             
-        return jsonify({"symbol": symbol, "spot": spot_price, "chain": chain})
+            # Try to get spot from Kite first, fallback to YF
+            try:
+                from src.trading_system.tools import get_kite
+                kite = get_kite()
+                if kite:
+                    quote = kite.quote([symbol])
+                    if symbol in quote:
+                        spot_price = quote[symbol]['last_price']
+                    else:
+                        spot_price = fast_info.get('lastPrice', spot_price)
+            except Exception:
+                spot_price = fast_info.get('lastPrice', spot_price)
+                
+            expdates = ticker.options
+            if expdates:
+                exp_date_str = expdates[0]
+                exp_date = datetime.datetime.strptime(exp_date_str, '%Y-%m-%d')
+                time_to_expiry = max((exp_date - datetime.datetime.now()).days / 365.0, 1/365.0)
+                
+                opt = ticker.option_chain(exp_date_str)
+                calls = opt.calls
+                puts = opt.puts
+                
+                atm_idx = (calls['strike'] - spot_price).abs().argmin()
+                start_idx = max(0, atm_idx - 5)
+                end_idx = min(len(calls), atm_idx + 6)
+                calls_near = calls.iloc[start_idx:end_idx]
+                
+                for _, crow in calls_near.iterrows():
+                    strike = crow['strike']
+                    c_price = crow['lastPrice']
+                    c_iv = crow['impliedVolatility']
+                    
+                    prow = puts[puts['strike'] == strike]
+                    p_price = prow['lastPrice'].values[0] if len(prow) > 0 else 0
+                    
+                    cgreeks = GreeksCalculator.calculate_greeks(spot_price, strike, time_to_expiry, r_d, c_iv if c_iv > 0.01 else volatility, 'call')
+                    
+                    chain.append({
+                        "strike": round(strike, 2),
+                        "call_price": round(c_price, 2),
+                        "put_price": round(p_price, 2),
+                        "delta": round(cgreeks['delta'], 3),
+                        "gamma": round(cgreeks['gamma'], 4),
+                        "theta": round(cgreeks['theta'], 3),
+                        "vega": round(cgreeks['vega'], 3)
+                    })
+            else:
+                raise ValueError("No options dates found on YF")
+
+        except Exception as e:
+            logger.warning(f"Live Options API failed ({e}), generating mock data")
+            strikes = np.linspace(spot_price * 0.9, spot_price * 1.1, 11)
+            for K in strikes:
+                if asset_class == 'forex':
+                    c_price = GarmanKohlhagenPricer.price(spot_price, K, time_to_expiry, r_d, r_f, volatility, 'call')
+                    p_price = GarmanKohlhagenPricer.price(spot_price, K, time_to_expiry, r_d, r_f, volatility, 'put')
+                    cgreeks = GreeksCalculator.calculate_greeks(spot_price, K, time_to_expiry, r_d, volatility, 'call', q=r_f)
+                elif asset_class == 'commodity':
+                    c_price = Black76Pricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'call')
+                    p_price = Black76Pricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'put')
+                    cgreeks = GreeksCalculator.calculate_greeks(spot_price, K, time_to_expiry, r_d, volatility, 'call')
+                else: # equity
+                    c_price = BlackScholesPricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'call')
+                    p_price = BlackScholesPricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'put')
+                    cgreeks = GreeksCalculator.calculate_greeks(spot_price, K, time_to_expiry, r_d, volatility, 'call')
+                    
+                chain.append({
+                    "strike": round(K, 2),
+                    "call_price": round(c_price, 2),
+                    "put_price": round(p_price, 2),
+                    "delta": round(cgreeks['delta'], 3),
+                    "gamma": round(cgreeks['gamma'], 4),
+                    "theta": round(cgreeks['theta'], 3),
+                    "vega": round(cgreeks['vega'], 3)
+                })
+                
+        return jsonify({"symbol": symbol, "spot": round(spot_price, 2), "chain": chain})
     except Exception as e:
         logger.exception("Options chain failed")
         return jsonify({"error": str(e)}), 500
@@ -2063,10 +2126,37 @@ def api_options_risk():
         
         var_metrics = MonteCarloSimulator.calculate_var(portfolio_value, final_values)
         
+        import psycopg2
+        import json
+        import datetime
+        try:
+            from src.trading_system.memory import DB_CONFIG
+            conn = psycopg2.connect(**DB_CONFIG)
+            conn.autocommit = True
+            with conn.cursor() as cur:
+                vis_name = f"mc_var_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+                vis_meta = json.dumps({
+                    'portfolio_value': portfolio_value, 'mu': mu, 'sigma': sigma, 
+                    'var': round(var_metrics['VaR'], 2), 'cvar': round(var_metrics['CVaR'], 2)
+                })
+                cur.execute("""
+                    INSERT INTO visualizations (name, meta, saved_at) 
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (name) DO UPDATE SET meta=EXCLUDED.meta, saved_at=EXCLUDED.saved_at
+                """, (vis_name, vis_meta, datetime.datetime.now()))
+            conn.close()
+        except Exception as db_e:
+            logger.warning(f"Failed to log MC risk to DB: {db_e}")
+
+        # Subsample 50 paths for Plotly visualization
+        # paths is shape (252, 5000). Transpose to (5000, 252) and grab first 50.
+        plot_paths = paths.T[:50, :].tolist()
+        
         return jsonify({
             "VaR_99": round(var_metrics['VaR'], 2),
             "CVaR_99": round(var_metrics['CVaR'], 2),
-            "simulated_worst_case": round(portfolio_value - var_metrics['VaR'], 2)
+            "simulated_worst_case": round(portfolio_value - var_metrics['VaR'], 2),
+            "plot_paths": plot_paths
         })
     except Exception as e:
         logger.exception("Options risk failed")

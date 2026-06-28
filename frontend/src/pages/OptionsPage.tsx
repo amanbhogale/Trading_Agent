@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import api from '../api'
+import Plot from 'react-plotly.js'
 
 interface ChainRow {
   strike: number
@@ -21,6 +23,7 @@ interface RiskResponse {
   VaR_99: number
   CVaR_99: number
   simulated_worst_case: number
+  plot_paths?: number[][]
   error?: string
 }
 
@@ -44,16 +47,14 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
     setLoadingChain(true)
     setChainData(null)
     try {
-      const res = await fetch('/api/options/chain', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, asset_class: assetClass })
+      const res = await api.post<ChainResponse>('/options/chain', {
+        symbol,
+        asset_class: assetClass
       })
-      const data: ChainResponse = await res.json()
-      if (data.error) alert(data.error)
-      else setChainData(data)
-    } catch (err) {
-      alert("Failed to fetch chain data.")
+      if (res.data.error) alert(res.data.error)
+      else setChainData(res.data)
+    } catch (err: any) {
+      alert(err.friendlyMessage || "Failed to fetch chain data.")
     } finally {
       setLoadingChain(false)
     }
@@ -63,16 +64,15 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
     setLoadingRisk(true)
     setRiskData(null)
     try {
-      const res = await fetch('/api/options/risk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ portfolio_value: portVal, mu, sigma })
+      const res = await api.post<RiskResponse>('/options/risk', {
+        portfolio_value: portVal,
+        mu,
+        sigma
       })
-      const data: RiskResponse = await res.json()
-      if (data.error) alert(data.error)
-      else setRiskData(data)
-    } catch (err) {
-      alert("Failed to fetch risk data.")
+      if (res.data.error) alert(res.data.error)
+      else setRiskData(res.data)
+    } catch (err: any) {
+      alert(err.friendlyMessage || "Failed to fetch risk data.")
     } finally {
       setLoadingRisk(false)
     }
@@ -173,7 +173,7 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
         {riskData && (
           <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
             <h3 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px' }}>Risk Metrics (99% Confidence)</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
               <div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Value at Risk (VaR)</div>
                 <div style={{ fontSize: '20px', color: 'var(--text-negative)', fontWeight: 'bold' }}>₹{riskData.VaR_99.toLocaleString()}</div>
@@ -187,6 +187,33 @@ export default function OptionsPage({ mode }: OptionsPageProps) {
                 <div style={{ fontSize: '20px', color: 'var(--text-positive)', fontWeight: 'bold' }}>₹{riskData.simulated_worst_case.toLocaleString()}</div>
               </div>
             </div>
+
+            {riskData.plot_paths && riskData.plot_paths.length > 0 && (
+              <div style={{ marginTop: '20px', borderTop: '1px solid var(--border-subtle)', paddingTop: '20px' }}>
+                <h4 style={{ fontSize: '13px', margin: '0 0 12px 0', color: 'var(--text-muted)' }}>Monte Carlo Spaghetti Chart (Sample of 50 Paths)</h4>
+                <Plot
+                  data={riskData.plot_paths.map((path, idx) => ({
+                    y: path,
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { width: 1, color: 'rgba(59, 130, 246, 0.3)' },
+                    hoverinfo: 'skip'
+                  }))}
+                  layout={{
+                    autosize: true,
+                    height: 300,
+                    margin: { l: 40, r: 20, t: 10, b: 30 },
+                    paper_bgcolor: 'transparent',
+                    plot_bgcolor: 'transparent',
+                    showlegend: false,
+                    xaxis: { gridcolor: '#333' },
+                    yaxis: { gridcolor: '#333' }
+                  }}
+                  useResizeHandler={true}
+                  style={{ width: '100%', height: '100%' }}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
