@@ -29,3 +29,5 @@ deep_learning_backtest/test_device.py
 deep_learning_backtest/test_run.py
 deep_learning_backtest/test_script.py
 learn_graph/
+# Static generated assets
+static/

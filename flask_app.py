@@ -275,13 +275,34 @@ def get_mock_portfolio(mode: str):
             except Exception as e:
                 logger.error("Delta tickers fetch failed for portfolio LTPs: %s", e)
         else:
-            for sym in symbols_to_fetch:
-                try:
-                    q = T._yf_quote(sym)
-                    if q.get('last_price'):
-                        ltps[sym] = q.get('last_price')
-                except Exception as e:
-                    logger.error("Forex yfinance quote failed for portfolio LTP %s: %s", sym, e)
+            try:
+                import yfinance as yf
+                import pandas as pd
+                # Batch download for Forex/Stocks
+                if symbols_to_fetch:
+                    data = yf.download(symbols_to_fetch, period="1d", progress=False)
+                    if not data.empty and 'Close' in data:
+                        close_data = data['Close']
+                        if isinstance(close_data, pd.Series):
+                            # Only one symbol returned
+                            sym = symbols_to_fetch[0]
+                            if not pd.isna(close_data.iloc[-1]):
+                                ltps[sym] = float(close_data.iloc[-1])
+                        else:
+                            # Multiple symbols returned
+                            for sym in symbols_to_fetch:
+                                if sym in close_data and not pd.isna(close_data[sym].iloc[-1]):
+                                    ltps[sym] = float(close_data[sym].iloc[-1])
+            except Exception as e:
+                logger.error("Batch yfinance quote failed for portfolio LTPs: %s", e)
+                # Fallback to loop
+                for sym in symbols_to_fetch:
+                    try:
+                        q = T._yf_quote(sym)
+                        if q.get('last_price'):
+                            ltps[sym] = q.get('last_price')
+                    except Exception as ex:
+                        logger.error("Forex yfinance quote fallback failed for %s: %s", sym, ex)
 
         m_name = "Crypto" if mode == 'crypto' else "Forex"
         md = f"### 💼 Mock {m_name} Portfolio\n\n"
@@ -363,8 +384,8 @@ FEEDS = {
         ('Financial Times', 'https://news.google.com/rss/search?q=when:24h+markets+site:ft.com&hl=en-US&gl=US&ceid=US:en', 'Global'),
         ('Economic Times', 'https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms', 'Indian'),
         ('LiveMint', 'https://www.livemint.com/rss/markets', 'Indian'),
-        ('Business Standard', 'https://www.business-standard.com/rss/markets-104.rss', 'Indian'),
-        ('MoneyControl', 'https://www.moneycontrol.com/rss/marketoutlook.xml', 'Indian'),
+        ('Google News India', 'https://news.google.com/rss/search?q=when:24h+indian+stock+market&hl=en-IN&gl=IN&ceid=IN:en', 'Indian'),
+        ('Google News NSE', 'https://news.google.com/rss/search?q=when:24h+NSE+BSE+Nifty&hl=en-IN&gl=IN&ceid=IN:en', 'Indian'),
     ],
     'forex': [
         ('DailyFX', 'https://www.dailyfx.com/feeds/forex-market-news', 'Global'),
@@ -758,6 +779,161 @@ def api_backtest():
         return jsonify({"error": str(e)}), 400
 
 
+def get_equity_portfolio_md() -> tuple[str, str]:
+    """Fetch equity portfolio from Kite directly without LLM and run advanced analysis."""
+    try:
+        import trading_system.tools as T
+        import json
+        import yfinance as yf
+        import pandas as pd
+        import numpy as np
+        import time
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import os
+        from concurrent.futures import ThreadPoolExecutor
+
+        raw = T.get_portfolio.invoke({})
+        data = json.loads(raw)
+
+        if "error" in data:
+            return f"### 💼 Equity Portfolio\n\nError: {data['error']}", ""
+
+        md = "### 💼 Advanced Equity Portfolio Analysis\n\n"
+        md += "| Symbol | Qty | Avg Price | LTP | Invested | Current | P&L | P&L % | PE Ratio |\n"
+        md += "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n"
+
+        holdings = data.get("holdings", [])
+        if not holdings:
+            md += "| No holdings found. | | | | | | | | |\n"
+            return md, ""
+
+        yf_symbols = []
+        symbol_map = {}
+        total_inv = 0.0
+        total_curr = 0.0
+
+        for h in holdings:
+            sym = h.get("tradingsymbol", "")
+            qty = h.get("quantity", 0)
+            avg = h.get("average_price", 0.0)
+            ltp = h.get("last_price", 0.0)
+            inv = qty * avg
+            curr = qty * ltp
+            
+            total_inv += inv
+            total_curr += curr
+            
+            yf_sym = T._kite_to_yf(sym)
+            yf_symbols.append(yf_sym)
+            symbol_map[yf_sym] = {
+                'sym': sym, 'qty': qty, 'avg': avg, 'ltp': ltp, 'inv': inv, 'curr': curr,
+                'pnl': h.get("pnl", curr - inv),
+                'pnl_pct': (h.get("pnl", curr - inv) / inv * 100) if inv else 0.0,
+                'pe': None
+            }
+
+        def fetch_pe(yf_sym):
+            try:
+                info = yf.Ticker(yf_sym).info
+                return yf_sym, info.get('trailingPE', info.get('forwardPE'))
+            except:
+                return yf_sym, None
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            for yf_sym, pe in executor.map(fetch_pe, yf_symbols):
+                symbol_map[yf_sym]['pe'] = pe
+
+        # Build table
+        weighted_pe = 0.0
+        total_pe_weight = 0.0
+        for yf_sym in yf_symbols:
+            sm = symbol_map[yf_sym]
+            pe_str = f"{sm['pe']:.2f}" if isinstance(sm['pe'], (int, float)) else "N/A"
+            if isinstance(sm['pe'], (int, float)) and sm['curr'] > 0:
+                weighted_pe += sm['pe'] * sm['curr']
+                total_pe_weight += sm['curr']
+                
+            md += f"| {sm['sym']} | {sm['qty']} | {sm['avg']:.2f} | {sm['ltp']:.2f} | {sm['inv']:.2f} | {sm['curr']:.2f} | {sm['pnl']:.2f} | {sm['pnl_pct']:.2f}% | {pe_str} |\n"
+
+        avg_pe = (weighted_pe / total_pe_weight) if total_pe_weight > 0 else 0.0
+
+        # Advanced Analysis: Volatility and Future Projection
+        chart_url = ""
+        try:
+            hist_data = yf.download(yf_symbols, period="1y", interval="1d", group_by="ticker", progress=False, threads=True)
+            
+            # Reconstruct portfolio historical value
+            daily_portfolio_value = pd.Series(0.0, index=hist_data.index if len(yf_symbols) == 1 else hist_data.index)
+            
+            if len(yf_symbols) == 1:
+                hist_data = hist_data.dropna(how='all')
+                if not hist_data.empty and 'Close' in hist_data.columns:
+                    daily_portfolio_value = hist_data['Close'] * symbol_map[yf_symbols[0]]['qty']
+            else:
+                for yf_sym in yf_symbols:
+                    if yf_sym in hist_data.columns.levels[0]:
+                        close_prices = hist_data[yf_sym]['Close']
+                        daily_portfolio_value = daily_portfolio_value.add(close_prices * symbol_map[yf_sym]['qty'], fill_value=0)
+            
+            daily_portfolio_value = daily_portfolio_value.dropna()
+            
+            if not daily_portfolio_value.empty and len(daily_portfolio_value) > 20:
+                daily_returns = daily_portfolio_value.pct_change().dropna()
+                annual_volatility = daily_returns.std() * np.sqrt(252)
+                cagr = (daily_portfolio_value.iloc[-1] / daily_portfolio_value.iloc[0]) ** (252 / len(daily_portfolio_value)) - 1
+                
+                md += "\n#### 📊 Advanced Metrics\n"
+                md += f"- **Portfolio P/E Ratio**: {avg_pe:.2f}\n"
+                md += f"- **Historical 1Y Volatility**: {annual_volatility*100:.2f}%\n"
+                md += f"- **Historical 1Y CAGR**: {cagr*100:.2f}%\n"
+
+                # Monte Carlo Projection (1 Year)
+                days_to_project = 252
+                simulations = 100
+                last_price = daily_portfolio_value.iloc[-1]
+                
+                plt.figure(figsize=(10, 5))
+                plt.style.use('dark_background')
+                
+                # Plot historical
+                plt.plot(range(len(daily_portfolio_value)), daily_portfolio_value.values, label='Historical', color='#00ffcc', linewidth=2)
+                
+                # Plot simulations
+                for i in range(simulations):
+                    sim_returns = np.random.normal(cagr/252, daily_returns.std(), days_to_project)
+                    sim_prices = last_price * np.cumprod(1 + sim_returns)
+                    plt.plot(range(len(daily_portfolio_value)-1, len(daily_portfolio_value) + days_to_project - 1), 
+                             sim_prices, color='#ff00ff', alpha=0.05)
+                
+                # Mean projection
+                mean_returns = np.full(days_to_project, cagr/252)
+                mean_prices = last_price * np.cumprod(1 + mean_returns)
+                plt.plot(range(len(daily_portfolio_value)-1, len(daily_portfolio_value) + days_to_project - 1), 
+                         mean_prices, label='Expected Projection', color='#ffaa00', linewidth=2, linestyle='--')
+                
+                plt.title("Portfolio Value: 1-Year Historical & Monte Carlo Future Projection", color='white')
+                plt.xlabel("Trading Days", color='gray')
+                plt.ylabel("Portfolio Value (₹)", color='gray')
+                plt.grid(color='#333333', linestyle='--')
+                plt.legend()
+                
+                os.makedirs("static", exist_ok=True)
+                chart_path = "static/portfolio_projection.png"
+                plt.savefig(chart_path, bbox_inches='tight', transparent=True)
+                plt.close()
+                
+                chart_url = "/static/portfolio_projection.png?t=" + str(int(time.time()))
+                md += "\n*Below is a 100-path Monte Carlo projection of your portfolio's future value over the next year based on historical volatility and drift.*"
+
+        except Exception as ex:
+            md += f"\n*Could not generate advanced projection: {ex}*"
+            
+        return md, chart_url
+    except Exception as e:
+        return f"### 💼 Equity Portfolio Error\n\nFailed to fetch portfolio: {e}", ""
+
 @app.route('/api/portfolio', methods=['POST'])
 def api_portfolio():
     try:
@@ -767,9 +943,8 @@ def api_portfolio():
             html_output = markdown.markdown(result, extensions=['fenced_code', 'tables'])
             chart_url = ""
         else:
-            result = get_orchestrator().get_dashboard()
+            result, chart_url = get_equity_portfolio_md()
             html_output = markdown.markdown(result, extensions=['fenced_code', 'tables'])
-            chart_url = "/data/visualizations/portfolio_dashboard.html"
         
         return jsonify({
             "output": html_output,
@@ -864,13 +1039,34 @@ def get_mock_portfolio_stats(mode: str):
             except Exception as e:
                 logger.error("Delta tickers fetch failed for portfolio stats LTPs: %s", e)
         else:
-            for sym in symbols_to_fetch:
-                try:
-                    q = T._yf_quote(sym)
-                    if q.get('last_price'):
-                        ltps[sym] = q.get('last_price')
-                except Exception as e:
-                    logger.error("Forex yfinance quote failed for portfolio stats LTP %s: %s", sym, e)
+            try:
+                import yfinance as yf
+                import pandas as pd
+                # Batch download for Forex/Stocks stats
+                if symbols_to_fetch:
+                    data = yf.download(symbols_to_fetch, period="1d", progress=False)
+                    if not data.empty and 'Close' in data:
+                        close_data = data['Close']
+                        if isinstance(close_data, pd.Series):
+                            # Only one symbol returned
+                            sym = symbols_to_fetch[0]
+                            if not pd.isna(close_data.iloc[-1]):
+                                ltps[sym] = float(close_data.iloc[-1])
+                        else:
+                            # Multiple symbols returned
+                            for sym in symbols_to_fetch:
+                                if sym in close_data and not pd.isna(close_data[sym].iloc[-1]):
+                                    ltps[sym] = float(close_data[sym].iloc[-1])
+            except Exception as e:
+                logger.error("Batch yfinance quote failed for portfolio stats LTPs: %s", e)
+                # Fallback to loop
+                for sym in symbols_to_fetch:
+                    try:
+                        q = T._yf_quote(sym)
+                        if q.get('last_price'):
+                            ltps[sym] = q.get('last_price')
+                    except Exception as ex:
+                        logger.error("Forex yfinance quote fallback failed for %s: %s", sym, ex)
 
         total_invested = 0.0
         total_current = 0.0

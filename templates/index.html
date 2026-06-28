@@ -10,6 +10,7 @@
             <div class="form-group">
                 <label>Provider</label>
                 <select id="provider" name="provider" onchange="updateBaseUrl()">
+                    <option value="nvidia" selected>NVIDIA API</option>
                     <option value="openrouter">OpenRouter</option>
                     <option value="openai">OpenAI</option>
                     <option value="anthropic">Anthropic</option>
@@ -18,7 +19,7 @@
             </div>
             <div class="form-group">
                 <label>Model</label>
-                <input type="text" id="model" name="model" value="nvidia/nemotron-3-super-120b-a12b:free">
+                <input type="text" id="model" name="model" value="nvidia/nemotron-3-ultra-550b-a55b">
             </div>
             <div class="form-group">
                 <label>API Key</label>
@@ -26,7 +27,7 @@
             </div>
             <div class="form-group">
                 <label>Base URL</label>
-                <input type="text" id="base_url" name="base_url" value="https://openrouter.ai/api/v1">
+                <input type="text" id="base_url" name="base_url" value="https://integrate.api.nvidia.com/v1">
             </div>
         </form>
     </div>
@@ -60,6 +61,7 @@
 <script>
     const urls = {
         "openrouter": "https://openrouter.ai/api/v1",
+        "nvidia": "https://integrate.api.nvidia.com/v1",
         "openai": "",
         "anthropic": "",
         "google-gemini": "https://generativelanguage.googleapis.com/v1beta/openai"

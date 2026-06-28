@@ -34,6 +34,7 @@ class LLMConfig:
     temperature : float          = 0.0
     max_tokens  : int            = 1024
     base_url    : Optional[str]  = "https://openrouter.ai/api/v1"
+    model_kwargs: Dict[str, Any] = field(default_factory=dict)
 
     # ---- quick factory helpers ----------------------------------------
     @classmethod
@@ -63,6 +64,16 @@ class LLMConfig:
             api_key  = api_key,
             provider = "anthropic",
             base_url = None,
+            **kwargs,
+        )
+
+    @classmethod
+    def for_nvidia(cls, model: str, api_key: str, **kwargs) -> "LLMConfig":
+        return cls(
+            model    = model,
+            api_key  = api_key,
+            provider = "openai",
+            base_url = "https://integrate.api.nvidia.com/v1",
             **kwargs,
         )
 
@@ -101,6 +112,9 @@ class LLMService:
             temperature    = self.config.temperature,
             max_tokens     = self.config.max_tokens,
         )
+        if self.config.model_kwargs:
+            init_kwargs["model_kwargs"] = self.config.model_kwargs
+        
         # only pass base_url when explicitly set
         if self.config.base_url:
             init_kwargs["base_url"] = self.config.base_url

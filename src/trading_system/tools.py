@@ -268,10 +268,8 @@ def _yf_quote(symbol: str) -> dict:
 #======================#
 #internet search tool using travily
 #=======================#
-travily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 @tool
-
 def internet_search(
     query               : str,
     max_results         : int                              = 5,
@@ -286,6 +284,11 @@ def internet_search(
     include_raw_content — whether to include full raw page content.
     Returns a dict with query, answer summary, and list of results.
     """
+    api_key = os.getenv("TAVILY_API_KEY")
+    if not api_key:
+        return {"error": "TAVILY_API_KEY environment variable is not set."}
+        
+    travily_client = TavilyClient(api_key=api_key)
     response = travily_client.search(
         query               = query,
         max_results         = max_results,
@@ -477,6 +480,22 @@ def _fetch_historical_data(symbol: str, interval: str = "day", days: int = 30) -
                 return pd.read_parquet(cache_file)
             except Exception as e:
                 logger.warning("Cache read failed, re-fetching: %s", e)
+
+    # 1) Check PostgreSQL precomputed DB
+    try:
+        import psycopg2
+        import pandas.io.sql as psql
+        from src.trading_system.memory import DB_CONFIG
+        
+        db_interval = "1d" if interval in ("day", "1d") else interval
+        with psycopg2.connect(**DB_CONFIG) as conn:
+            query = "SELECT date, open, high, low, close, volume FROM precomputed_ohlcv_indicators WHERE symbol=%s AND interval=%s ORDER BY date DESC LIMIT %s"
+            db_df = psql.read_sql(query, conn, params=(symbol, db_interval, days))
+            if not db_df.empty:
+                logger.info(f"Loaded {len(db_df)} rows from precomputed DB for {symbol}")
+                return db_df.sort_values("date").reset_index(drop=True)
+    except Exception as e:
+        logger.warning(f"Failed to fetch from precomputed DB: {e}")
 
     from src.trading_system.api_manager import api_manager
     routed_api = api_manager.route_ohlcv_request(symbol, interval, days)

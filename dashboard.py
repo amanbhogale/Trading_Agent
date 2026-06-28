@@ -249,7 +249,8 @@ def run_backtest(
 def show_portfolio() -> tuple:
     """Refresh portfolio dashboard."""
     try:
-        result     = get_orchestrator().get_dashboard()
+        from flask_app import get_equity_portfolio_md
+        result = get_equity_portfolio_md()
         chart_html = load_html("data/visualizations/portfolio_dashboard.html")
         return result, chart_html
     except Exception as e:
@@ -334,7 +335,7 @@ def build_dashboard() -> gr.Blocks:
                     )
                     model_in = gr.Textbox(
                         label = "Model",
-                        value = os.getenv("LLM_MODEL", "nvidia/nemotron-3-super-120b-a12b:free"),
+                        value = os.getenv("LLM_MODEL", "nvidia/nemotron-3-ultra-550b-a55b"),
                     )
                     api_key_in = gr.Textbox(
                         label = "API Key",

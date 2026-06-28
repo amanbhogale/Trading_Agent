@@ -4,6 +4,7 @@ import api from '../api'
 
 const PROVIDERS = [
   { value: 'openrouter',    label: 'OpenRouter',   baseUrl: 'https://openrouter.ai/api/v1' },
+  { value: 'nvidia',        label: 'NVIDIA API',   baseUrl: 'https://integrate.api.nvidia.com/v1' },
   { value: 'openai',        label: 'OpenAI',        baseUrl: '' },
   { value: 'anthropic',     label: 'Anthropic',     baseUrl: '' },
   { value: 'google-gemini', label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
@@ -22,6 +23,8 @@ const PROVIDER_MODELS: Record<string, { id: string; label: string; free?: boolea
     { id: 'openai/gpt-4o',                            label: 'GPT-4o (paid)',            free: false },
     { id: 'anthropic/claude-sonnet-4-5',              label: 'Claude Sonnet 4.5 (paid)', free: false },
     { id: 'google/gemini-2.5-pro',                    label: 'Gemini 2.5 Pro (paid)',    free: false },
+    { id: 'poolside/laguna-m.1:free',                 label: 'Poolside Laguna M.1',      free: true },
+    { id: 'opencode/nemotron-3-ultra-free',           label: 'Nemotron 3 Ultra (Free)',  free: true },
   ],
   openai: [
     { id: 'gpt-4o',          label: 'GPT-4o' },
@@ -39,6 +42,12 @@ const PROVIDER_MODELS: Record<string, { id: string; label: string; free?: boolea
     { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
     { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
   ],
+  nvidia: [
+    { id: 'nvidia/nemotron-3-ultra-550b-a55b', label: 'Nemotron 3 Ultra 550B' },
+    { id: 'nvidia/nemotron-3-super-120b-a12b', label: 'Nemotron 3 Super 120B' },
+    { id: 'nvidia/nemotron-4-340b-instruct',   label: 'Nemotron 4 340B' },
+    { id: 'nvidia/llama-3.1-nemotron-70b-instruct', label: 'Llama 3.1 Nemotron 70B' }
+  ],
 }
 
 interface Props {
@@ -48,10 +57,10 @@ interface Props {
 
 /* ── LLM Connection Panel ───────────────────── */
 function LLMPanel({ setConnected }: { setConnected: (v: boolean) => void }) {
-  const [provider,    setProvider]    = useState('openrouter')
-  const [model,       setModel]       = useState('nvidia/nemotron-3-ultra-550b-a55b:free')
+  const [provider,    setProvider]    = useState('nvidia')
+  const [model,       setModel]       = useState('nvidia/nemotron-3-ultra-550b-a55b')
   const [apiKey,      setApiKey]      = useState('')
-  const [baseUrl,     setBaseUrl]     = useState('https://openrouter.ai/api/v1')
+  const [baseUrl,     setBaseUrl]     = useState('https://integrate.api.nvidia.com/v1')
   const [loading,     setLoading]     = useState(false)
   const [status,      setStatus]      = useState('')
   const [ok,          setOk]          = useState(false)
