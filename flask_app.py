@@ -1617,7 +1617,7 @@ def delta_request(method, path, params=None, json_data=None, api_key=None, api_s
     import time
     
     url = f"https://api.delta.exchange{path}"
-    timestamp = str(int(time.time() * 1000))
+    timestamp = str(int(time.time()))
     query_string = ""
     if params:
         from urllib.parse import urlencode
