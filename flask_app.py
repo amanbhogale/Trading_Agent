@@ -2082,7 +2082,21 @@ def api_options_chain():
 
         except Exception as e:
             logger.warning(f"Live Options API failed ({e}), generating mock data")
-            strikes = np.linspace(spot_price * 0.9, spot_price * 1.1, 11)
+            
+            def get_strike_step(sp, ac):
+                if ac == 'forex':
+                    return 0.005 if sp < 2.0 else (0.5 if sp < 200 else 1.0)
+                if sp > 20000: return 100.0
+                elif sp > 5000: return 50.0
+                elif sp > 1000: return 20.0
+                elif sp > 500: return 10.0
+                elif sp > 100: return 5.0
+                return 1.0
+                
+            step = get_strike_step(spot_price, asset_class)
+            atm = round(spot_price / step) * step
+            strikes = [atm + (i * step) for i in range(-5, 6)]
+            
             for K in strikes:
                 if asset_class == 'forex':
                     c_price = GarmanKohlhagenPricer.price(spot_price, K, time_to_expiry, r_d, r_f, volatility, 'call')
