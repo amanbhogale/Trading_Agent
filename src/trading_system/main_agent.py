@@ -17,6 +17,7 @@ from .sub_agents import (
     ExecutionAgent,
 )
 from . import tools as T
+from .shepherd_layer import ShepherdSafetyLayer, ProposalStatus
 
 logging.basicConfig(
     level  = logging.INFO,
@@ -36,12 +37,21 @@ You coordinate a team of specialized sub-agents:
   5. risk          – position sizing, risk checks
   6. execution     – order placement (human approval required)
 
+Safety & Governance (Shepherd Layer):
+  All strategy code generation and trade execution flows through the
+  Shepherd safety layer, which provides:
+  - Sandboxed execution for generated code
+  - Retained changesets — proposals are held for human review
+  - Durable execution traces for audit compliance
+  - Explicit settlement: select() to accept, discard() to reject
+
 For every user request:
   a) Identify which agents are needed
   b) Break the task into sequential sub-tasks
   c) Route each sub-task to the correct agent
   d) Synthesize all results into a coherent final response
-  e) Always mention if human approval is required for trades
+  e) Strategy proposals and trade orders are RETAINED for review
+  f) Always mention pending proposals that need human settlement
 
 You have access to memory – use context from previous turns.
 """
@@ -59,10 +69,15 @@ class OrchestratorAgent:
         self,
         llm_service      : LLMService,
         approval_callback = None,     # Gradio will inject this
+        workspace_root   : str = ".",
     ) -> None:
         self.llm      = llm_service
         self.mem      = memory
         self.approve  = approval_callback  # fn(order) -> bool
+
+        # ── Shepherd Safety Layer ─────────────────────────────────────────
+        self.shepherd = ShepherdSafetyLayer(workspace_root=workspace_root)
+        logger.info("Shepherd safety layer attached to orchestrator ✅")
 
         # ── spawn sub-agents ─────────────────────────────────────────────
         self.market_data   = MarketDataAgent(llm_service)
@@ -94,26 +109,71 @@ class OrchestratorAgent:
             logger.info("Intent: %s", intent)
 
             agent_results: Dict[str, str] = {}
+            # Accumulated findings get appended to each subsequent agent's
+            # prompt so the pipeline is a real pipeline (plan -> data ->
+            # analyse -> risk -> execute), not five agents working blind to
+            # each other on the same raw user message.
+            context_so_far = ""
+
+            def _with_context(base_msg: str) -> str:
+                if not context_so_far:
+                    return base_msg
+                return (
+                    f"{base_msg}\n\n"
+                    f"--- Findings from earlier agents in this pipeline ---\n"
+                    f"{context_so_far}"
+                )
 
             if "market_data" in intent:
-                agent_results["market_data"] = self.market_data.run(user_message)
+                result = self.market_data.run(user_message)
+                agent_results["market_data"] = result
+                context_so_far += f"\n[market_data]\n{result}\n"
 
             if "analysis" in intent:
-                agent_results["analysis"] = self.analysis.run(user_message)
+                result = self.analysis.run(_with_context(user_message))
+                agent_results["analysis"] = result
+                context_so_far += f"\n[analysis]\n{result}\n"
 
             if "strategy" in intent:
-                agent_results["strategy"] = self.strategy.run(user_message)
+                result = self.strategy.run(_with_context(user_message))
+                agent_results["strategy"] = result
+                context_so_far += f"\n[strategy]\n{result}\n"
+
+                # ── Shepherd: retain strategy as a reviewable proposal ────
+                try:
+                    # Extract asset/timeframe from user message heuristically
+                    asset = self._extract_asset(user_message)
+                    timeframe = self._extract_timeframe(user_message)
+                    proposal = self.shepherd.propose_strategy(
+                        prompt       = user_message,
+                        asset        = asset,
+                        timeframe    = timeframe,
+                        agent_result = result,
+                    )
+                    agent_results["shepherd_strategy"] = (
+                        f"📋 Strategy proposal **{proposal.proposal_id}** created "
+                        f"(status: {proposal.status.value}).\n"
+                        f"Changed files: {proposal.changed_paths}\n"
+                        f"Review the diff and settle with: "
+                        f"`/api/shepherd/settle/strategy/{proposal.proposal_id}`"
+                    )
+                except Exception as e:
+                    logger.warning("Shepherd strategy proposal failed: %s", e)
 
             if "visualization" in intent:
                 agent_results["visualization"] = self.viz.run(user_message)
 
             if "risk" in intent:
-                agent_results["risk"] = self.risk.run(user_message)
+                result = self.risk.run(_with_context(user_message))
+                agent_results["risk"] = result
+                context_so_far += f"\n[risk]\n{result}\n"
 
             if "execution" in intent:
                 agent_results["execution"] = (
                     "⚠️ Trade execution requires explicit human approval "
-                    "via the Execute Trade tab."
+                    "via the Execute Trade tab.\n"
+                    "🛡️ All trades flow through the Shepherd safety layer — "
+                    "orders are retained as proposals until explicitly settled."
                 )
 
             if not agent_results:
@@ -189,14 +249,97 @@ If trade action is recommended, clearly state it requires human approval.
         return response["messages"][-1].content
 
     def execute_trade(self, order: Dict) -> str:
-        """Called explicitly from Gradio trade execution tab."""
+        """
+        Called explicitly from Gradio trade execution tab.
+
+        Now routes through Shepherd's retained proposal model:
+        1. RiskAgent evaluates the order
+        2. Shepherd creates a retained trade proposal
+        3. Proposal is returned for human review (not auto-executed)
+        4. Human settles via settle_trade_proposal()
+        """
         risk_check = self.risk.run(
             f"Evaluate risk for: {json.dumps(order)}"
         )
-        if "REJECTED" in risk_check.upper():
-            return f"❌ Risk agent rejected trade:\n{risk_check}"
 
-        return self.execution.execute_with_approval(order)
+        # Create a retained trade proposal via Shepherd
+        proposal = self.shepherd.propose_trade(
+            order      = order,
+            risk_check = risk_check,
+        )
+
+        if proposal.status == ProposalStatus.REJECTED:
+            return (
+                f"❌ Trade auto-rejected by risk check:\n{risk_check}\n"
+                f"Proposal ID: {proposal.proposal_id}"
+            )
+
+        return (
+            f"📋 Trade proposal **{proposal.proposal_id}** created\n"
+            f"⚠️  TRADE REQUEST\n"
+            f"  Symbol : {order.get('symbol')}\n"
+            f"  Action : {order.get('transaction')}\n"
+            f"  Qty    : {order.get('quantity')}\n"
+            f"  Type   : {order.get('order_type', 'MARKET')}\n"
+            f"  Price  : {order.get('price', 'MARKET')}\n\n"
+            f"Risk Assessment:\n{risk_check}\n\n"
+            f"🛡️ Settle via: `/api/shepherd/settle/trade/{proposal.proposal_id}`"
+        )
+
+    def settle_trade_proposal(
+        self, proposal_id: str, accept: bool, reason: str = ""
+    ) -> str:
+        """
+        Settle a retained trade proposal (Shepherd settlement).
+
+        Parameters
+        ----------
+        proposal_id : str
+            The trade proposal ID to settle
+        accept : bool
+            True to execute, False to reject
+        reason : str
+            Optional reason for the decision
+        """
+        proposal = self.shepherd.settle_trade(
+            proposal_id = proposal_id,
+            accept      = accept,
+            execute_fn  = T.place_order.invoke if accept else None,
+            reason      = reason,
+        )
+        if proposal.status == ProposalStatus.ACCEPTED:
+            return f"✅ Trade {proposal_id} EXECUTED\n{proposal.result}"
+        elif proposal.status == ProposalStatus.REJECTED:
+            return f"❌ Trade {proposal_id} REJECTED (reason: {reason})"
+        else:
+            return f"⚠️ Trade {proposal_id} status: {proposal.status.value}\n{proposal.error}"
+
+    def settle_strategy_proposal(
+        self, proposal_id: str, accept: bool, reason: str = ""
+    ) -> str:
+        """
+        Settle a retained strategy proposal (Shepherd settlement).
+
+        Parameters
+        ----------
+        proposal_id : str
+            The strategy proposal ID to settle
+        accept : bool
+            True to write strategy file, False to discard
+        reason : str
+            Optional reason for the decision
+        """
+        proposal = self.shepherd.settle_strategy(
+            proposal_id = proposal_id,
+            accept      = accept,
+            reason      = reason,
+        )
+        if proposal.status == ProposalStatus.ACCEPTED:
+            return f"✅ Strategy {proposal_id} ACCEPTED → {proposal.file_path}"
+        elif proposal.status == ProposalStatus.REJECTED:
+            return f"❌ Strategy {proposal_id} DISCARDED (reason: {reason})"
+        else:
+            return f"⚠️ Strategy {proposal_id} status: {proposal.status.value}"
 
     def get_dashboard(self) -> str:
         """Generate and return portfolio dashboard path."""
@@ -209,6 +352,41 @@ If trade action is recommended, clearly state it requires human approval.
             "indicators"    : self.analysis.run(f"Calculate all indicators for {symbol}"),
             "chart"         : self.viz.run(f"Create candlestick chart for {symbol}"),
         }
+
+    # ── Shepherd helper methods ───────────────────────────────────────────
+
+    def get_pending_proposals(self) -> Dict:
+        """Get all pending proposals from the Shepherd safety layer."""
+        return self.shepherd.list_proposals(status=ProposalStatus.PENDING)
+
+    def get_proposal_diff(self, proposal_id: str) -> Optional[str]:
+        """Get the diff/changeset for a strategy proposal."""
+        proposal = self.shepherd.get_strategy_proposal(proposal_id)
+        if proposal:
+            return proposal.diff
+        return None
+
+    def get_execution_traces(self, limit: int = 20) -> list:
+        """Get recent execution traces for audit."""
+        return self.shepherd.list_traces(limit=limit)
+
+    def _extract_asset(self, msg: str) -> str:
+        """Heuristically extract asset/symbol from user message."""
+        # Common patterns: "RELIANCE", "NIFTY", "BTC", "AAPL"
+        import re
+        # Look for uppercase words that look like ticker symbols
+        matches = re.findall(r'\b([A-Z]{2,10})\b', msg)
+        # Filter out common English words
+        stopwords = {'THE', 'AND', 'FOR', 'WITH', 'THIS', 'THAT', 'FROM',
+                     'BUY', 'SELL', 'HOLD', 'RSI', 'MACD', 'EMA', 'SMA'}
+        tickers = [m for m in matches if m not in stopwords]
+        return tickers[0] if tickers else "UNKNOWN"
+
+    def _extract_timeframe(self, msg: str) -> str:
+        """Heuristically extract timeframe from user message."""
+        import re
+        tf_match = re.search(r'\b(\d+[mhd]|\d+\s*(?:min|hour|day|week))\b', msg.lower())
+        return tf_match.group(0) if tf_match else "1d"
 
 
 # ---------------------------------------------------------------------------

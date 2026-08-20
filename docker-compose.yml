@@ -1,0 +1,380 @@
+# ── Shared environment for all agent services ───────────────────────────────
+x-agent-env: &agent-env
+  DB_HOST: db
+  DB_PORT: "5432"
+  DB_NAME: trading_db
+  DB_USER: trading_agent
+  DB_PASSWORD: zombie612@
+  # Fill in your API keys (or use a .env file)
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+  LLM_MODEL: ${LLM_MODEL:-google/gemini-2.5-pro}
+  TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+  KITE_API_KEY: ${KITE_API_KEY:-}
+  KITE_ACCESS_TOKEN: ${KITE_ACCESS_TOKEN:-}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  # MongoDB Atlas
+  MONGO_USERNAME: ${MONGO_USERNAME:-}
+  MONGO_PASSWORD: ${MONGO_PASSWORD:-}
+  MONGO_URI: ${MONGO_URI:-}
+  MONGO_DB_NAME: ${MONGO_DB_NAME:-trading_db}
+  # Kafka
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-trading-mongo-consumer}
+  KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET:-earliest}
+
+# ── Shared build context for all agent services ─────────────────────────────
+x-agent-build: &agent-build
+  context: .
+  dockerfile: services/Dockerfile.agent-base
+  network: host
+
+networks:
+  trading_net:
+    driver: bridge
+
+services:
+  # ── Database ──────────────────────────────────────────────────────────────
+  db:
+    image: postgres:15
+    container_name: trading_db
+    environment:
+      POSTGRES_DB: trading_db
+      POSTGRES_USER: trading_agent
+      POSTGRES_PASSWORD: zombie612@
+    # Internal only — all services reach it as db:5432 via trading_net.
+    # Uncomment below if you need host access (e.g. pgAdmin):
+    # ports:
+    #   - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading_agent -d trading_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - trading_net
+
+  # ── Market Data Agent ─────────────────────────────────────────────────────
+  market-data:
+    build:
+      <<: *agent-build
+      args:
+        SERVICE_DIR: market-data
+    container_name: trading_market_data
+    environment:
+      <<: *agent-env
+    # Internal only — reached by orchestrator as http://market-data:8000
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    networks:
+      - trading_net
+
+  # ── Analysis Agent ────────────────────────────────────────────────────────
+  analysis:
+    build:
+      <<: *agent-build
+      args:
+        SERVICE_DIR: analysis
+    container_name: trading_analysis
+    environment:
+      <<: *agent-env
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    networks:
+      - trading_net
+
+  # ── Strategy Agent ────────────────────────────────────────────────────────
+  strategy:
+    build:
+      <<: *agent-build
+      args:
+        SERVICE_DIR: strategy
+    container_name: trading_strategy
+    environment:
+      <<: *agent-env
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    networks:
+      - trading_net
+
+  # ── Visualization Agent ───────────────────────────────────────────────────
+  visualization:
+    build:
+      <<: *agent-build
+      args:
+        SERVICE_DIR: visualization
+    container_name: trading_visualization
+    environment:
+      <<: *agent-env
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    networks:
+      - trading_net
+
+  # ── Risk Agent ────────────────────────────────────────────────────────────
+  risk:
+    build:
+      <<: *agent-build
+      args:
+        SERVICE_DIR: risk
+    container_name: trading_risk
+    environment:
+      <<: *agent-env
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    networks:
+      - trading_net
+
+  # ── Execution Agent ───────────────────────────────────────────────────────
+  execution:
+    build:
+      <<: *agent-build
+      args:
+        SERVICE_DIR: execution
+    container_name: trading_execution
+    environment:
+      <<: *agent-env
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    networks:
+      - trading_net
+
+  # ── Orchestrator ──────────────────────────────────────────────────────────
+  orchestrator:
+    build:
+      <<: *agent-build
+      args:
+        SERVICE_DIR: orchestrator
+    container_name: trading_orchestrator
+    environment:
+      <<: *agent-env
+      MARKET_DATA_URL:   http://market-data:8000
+      ANALYSIS_URL:      http://analysis:8000
+      STRATEGY_URL:      http://strategy:8000
+      VISUALIZATION_URL: http://visualization:8000
+      RISK_URL:          http://risk:8000
+      EXECUTION_URL:     http://execution:8000
+    # Internal only — backend proxies to it via http://orchestrator:8000
+    expose:
+      - "8000"
+    depends_on:
+      - market-data
+      - analysis
+      - strategy
+      - visualization
+      - risk
+      - execution
+    volumes:
+      - ./data:/app/data
+    networks:
+      - trading_net
+
+  # ── Data ETL Service (PySpark) ────────────────────────────────────────────
+  data-etl:
+    build:
+      context: .
+      dockerfile: services/data-etl/Dockerfile
+      network: host
+    container_name: trading_data_etl
+    environment:
+      <<: *agent-env
+    # Exposed to host so you can trigger ETL and check status from your machine
+    ports:
+      - "8007:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    networks:
+      - trading_net
+    # PySpark needs more memory
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+
+  # ── Flask API Gateway ─────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      network: host
+    container_name: trading_backend
+    environment:
+      <<: *agent-env
+      ORCHESTRATOR_URL: http://orchestrator:8000
+    ports:
+      - "5000:5000"
+    depends_on:
+      - orchestrator
+      - data-etl
+    volumes:
+      - ./data:/app/data
+    networks:
+      - trading_net
+
+  # ── React Frontend ────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      network: host
+    container_name: trading_frontend
+    ports:
+      - "3000:5173"
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+    depends_on:
+      - backend
+    networks:
+      - trading_net
+
+  # ── Zookeeper (Kafka dependency) ─────────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: trading_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_SERVER_ID: 1
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    networks:
+      - trading_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | bash -c 'exec 3<>/dev/tcp/localhost/2181; cat >&3; timeout 2 cat <&3' | grep imok"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ── Kafka Broker ──────────────────────────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: trading_kafka
+    depends_on:
+      zookeeper:
+        condition: service_started   # Kafka retries ZK connection internally
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168       # 7 days
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824  # 1 GB
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
+    ports:
+      - "29092:29092"   # expose to host for local producers/debug
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - trading_net
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ── Kafka Topic Init (one-shot job) ───────────────────────────────────────────
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: trading_kafka_init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: >
+      bash -c "
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic nse.ohlcv --partitions 6 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic nse.orderbook --partitions 6 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic nse.trades --partitions 6 --replication-factor 1 &&
+        echo 'Kafka topics created successfully.'
+      "
+    networks:
+      - trading_net
+    restart: "no"
+
+  # ── MongoDB ETL Service (PySpark → MongoDB Atlas) ─────────────────────────────
+  mongo-etl:
+    build:
+      context: .
+      dockerfile: services/mongo-etl/Dockerfile
+      network: host
+    container_name: trading_mongo_etl
+    environment:
+      <<: *agent-env
+      PYTHONPATH: /app
+    ports:
+      - "8008:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    networks:
+      - trading_net
+    deploy:
+      resources:
+        limits:
+          memory: 6g
+
+  # ── Kafka Consumer (Kafka → MongoDB Atlas) ────────────────────────────────────
+  kafka-consumer:
+    build:
+      context: .
+      dockerfile: services/kafka-consumer/Dockerfile
+      network: host
+    container_name: trading_kafka_consumer
+    environment:
+      <<: *agent-env
+    ports:
+      - "8009:8000"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - trading_net
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  zookeeper_data:
+  zookeeper_logs:
+  kafka_data:

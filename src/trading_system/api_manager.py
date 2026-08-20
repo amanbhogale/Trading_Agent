@@ -34,6 +34,12 @@ class APIManager:
         self._yahoo_subscribed_symbols = set()
         self._yahoo_ws_client: Optional[Any] = None
 
+        # Delta Exchange WebSocket Cache
+        self.delta_live_prices: Dict[str, Dict[str, Any]] = {}
+        self._delta_ws_thread: Optional[Any] = None
+        self._delta_subscribed_symbols = set()
+        self._delta_ws_client: Optional[Any] = None
+
     def set_finnhub_key(self, key: str):
         self.finnhub_api_key = key
         logger.info("Finnhub key updated in API Manager")
@@ -99,40 +105,8 @@ class APIManager:
         """
         Routes the OHLCV request based on symbol, timeframe lookback, and API rate limits.
         """
-        days = int(days)
-        # Rule: For longer charts (days > 30), use Yahoo Finance only.
-        if days > 30:
-            logger.info(f"Routing {symbol} to Yahoo Finance (longer chart lookback: {days} days)")
-            return 'yfinance'
-
-        # Shorter charts: divide work based on call limits
-        is_crypto = symbol.upper().strip().endswith("USDT") or symbol.upper().strip().startswith("P-") or symbol.upper().strip().startswith("C-") or symbol.upper().strip().startswith("F-")
-        
-        if is_crypto:
-            if self.is_available('delta') and not self.is_rate_limited('delta'):
-                return 'delta'
-            else:
-                logger.info("Delta is unavailable or rate limited. Routing crypto request to Yahoo Finance.")
-                return 'yfinance'
-                
-        # Indian Equities vs US/Global Equities
-        is_indian = symbol.upper().strip().startswith("NSE:") or symbol.upper().strip().startswith("BSE:")
-        
-        if is_indian:
-            if self.is_available('kite') and not self.is_rate_limited('kite'):
-                return 'kite'
-            elif self.is_available('finnhub') and not self.is_rate_limited('finnhub'):
-                return 'finnhub'
-            else:
-                logger.info("Kite & Finnhub are unavailable/rate limited for Indian asset. Routing to Yahoo Finance.")
-                return 'yfinance'
-        else:
-            # US/Global equities
-            if self.is_available('finnhub') and not self.is_rate_limited('finnhub'):
-                return 'finnhub'
-            else:
-                logger.info("Finnhub is unavailable or rate limited for global asset. Routing to Yahoo Finance.")
-                return 'yfinance'
+        logger.info(f"Routing {symbol} to Yahoo Finance as requested")
+        return 'yfinance'
 
     def start_yahoo_websocket(self, symbols_to_subscribe):
         """Starts or updates the Yahoo Finance WebSocket connection in a daemon thread."""
@@ -188,6 +162,83 @@ class APIManager:
         self._yahoo_ws_thread = threading.Thread(target=run_loop, daemon=True)
         self._yahoo_ws_thread.start()
         logger.info("Yahoo Finance WebSocket listener thread started successfully")
+
+    def start_delta_websocket(self, symbols_to_subscribe):
+        """Starts or updates the Delta Exchange WebSocket connection in a daemon thread."""
+        import threading
+        
+        # Clean symbols
+        new_syms = [s for s in symbols_to_subscribe if s and s not in self._delta_subscribed_symbols]
+        if not new_syms and self._delta_ws_thread is not None:
+            return
+            
+        self._delta_subscribed_symbols.update(new_syms)
+        
+        if self._delta_ws_thread is not None:
+            logger.info(f"New symbols added to Delta WS. Restarting connection to subscribe to: {new_syms}")
+            if self._delta_ws_client:
+                try:
+                    self._delta_ws_client.close()
+                except Exception as e:
+                    logger.debug(f"Error closing old Delta WS client: {e}")
+            return
+
+        def run_loop():
+            import websocket
+            import json
+            while True:
+                current_list = list(self._delta_subscribed_symbols)
+                if not current_list:
+                    time.sleep(2)
+                    continue
+                try:
+                    logger.info(f"Connecting Delta Exchange WebSocket for {len(current_list)} symbols...")
+                    
+                    def on_open(ws):
+                        msg = {
+                            "type": "subscribe",
+                            "payload": {
+                                "channels": [
+                                    {
+                                        "name": "v2/ticker",
+                                        "symbols": current_list
+                                    }
+                                ]
+                            }
+                        }
+                        ws.send(json.dumps(msg))
+
+                    def on_message(ws, message):
+                        try:
+                            data = json.loads(message)
+                            if data.get('type') == 'v2/ticker':
+                                sym = data.get('symbol')
+                                price = data.get('close') or data.get('mark_price') or data.get('spot_price')
+                                if sym and price is not None:
+                                    self.delta_live_prices[sym] = {
+                                        'price': float(price),
+                                        'change': 0, # Cannot compute absolute change from just % easily without prev close, but let's keep it 0
+                                        'change_percent': float(data.get('ltp_change_24h', 0)),
+                                        'updated_at': time.time()
+                                    }
+                        except Exception as e:
+                            logger.debug(f"Delta WS message parse error: {e}")
+                    
+                    self._delta_ws_client = websocket.WebSocketApp(
+                        "wss://testnet-socket.delta.exchange", 
+                        on_open=on_open, 
+                        on_message=on_message
+                    )
+                    self._delta_ws_client.run_forever()
+                except Exception as e:
+                    logger.warning(f"Delta WebSocket error: {e}. Reconnecting in 10s...")
+                    time.sleep(10)
+                finally:
+                    self._delta_ws_client = None
+
+        self._delta_ws_thread = threading.Thread(target=run_loop, daemon=True)
+        self._delta_ws_thread.start()
+        logger.info("Delta Exchange WebSocket listener thread started successfully")
 
 # Singleton instance
 api_manager = APIManager()

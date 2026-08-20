@@ -1927,6 +1927,42 @@ def api_place_order():
 
 
 # --- Model Prediction Endpoint ---
+@app.route('/api/orderbook', methods=['GET'])
+def api_orderbook():
+    """Fetch live L2 orderbook snapshot directly from Kite API (External API)."""
+    try:
+        from src.trading_system.tools import _kite_connect
+        symbol = request.args.get('symbol', '').strip().upper()
+        if not symbol:
+            return jsonify({"error": "Symbol required"}), 400
+            
+        kite = _kite_connect()
+        if not kite:
+            return jsonify({"error": "Kite connection not configured"}), 500
+            
+        # Ensure symbol has exchange prefix for Kite
+        kite_sym = symbol if ':' in symbol else f"NSE:{symbol}"
+        
+        quotes = kite.quote([kite_sym])
+        if kite_sym not in quotes:
+            return jsonify({"error": "No data returned from Kite API."}), 404
+            
+        q = quotes[kite_sym]
+        depth = q.get('depth', {})
+        
+        bids = [{"price": d['price'], "qty": d['quantity'], "orders": d['orders']} for d in depth.get('buy', [])]
+        asks = [{"price": d['price'], "qty": d['quantity'], "orders": d['orders']} for d in depth.get('sell', [])]
+        
+        return jsonify({
+            "bids": bids,
+            "asks": asks,
+            "ltp": q.get('last_price', 0),
+            "timestamp": q.get('timestamp', '')
+        })
+    except Exception as e:
+        logger.exception("Failed to fetch live orderbook from external API")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/predict_model', methods=['POST'])
 def api_predict_model():
     try:
@@ -2030,19 +2066,8 @@ def api_options_chain():
             ticker = yf.Ticker(yf_symbol)
             fast_info = ticker.fast_info
             
-            # Try to get spot from Kite first, fallback to YF
-            try:
-                from src.trading_system.tools import get_kite
-                kite = get_kite()
-                if kite:
-                    quote = kite.quote([symbol])
-                    if symbol in quote:
-                        spot_price = quote[symbol]['last_price']
-                    else:
-                        spot_price = fast_info.get('lastPrice', spot_price)
-            except Exception:
-                spot_price = fast_info.get('lastPrice', spot_price)
-                
+            # strictly use YF for spot price
+            spot_price = fast_info.get('lastPrice', spot_price)
             expdates = ticker.options
             if expdates:
                 exp_date_str = expdates[0]

@@ -1,15 +1,49 @@
+# ── LLM / LangChain ───────────────────────────────────────────────────────────
 langchain
 langchain-core
 langchain-openai
 langchain-anthropic
 langchain-google-genai
-kiteconnect
-gradio
+langgraph
+langgraph-checkpoint-postgres
+
+# ── Web Framework ─────────────────────────────────────────────────────────────
+Flask
+flask-cors
+fastapi
+uvicorn[standard]
+
+# ── Database ──────────────────────────────────────────────────────────────────
+psycopg2-binary
+psycopg[binary]
+psycopg-pool
+pymongo[srv]>=4.6.0
+
+# ── Data / Finance ────────────────────────────────────────────────────────────
 pandas
 numpy
+scipy
 plotly
-tavily-python
-python-dotenv
-click
 yfinance
-Flask\nmarkdown\n
+kiteconnect
+backtesting
+bokeh
+cryptofeed
+ccxt
+FundamentalAnalysis
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+python-dotenv
+requests
+httpx
+click
+markdown
+tavily-python
+gradio
+
+# ── Kafka ─────────────────────────────────────────────────────────────────────
+confluent-kafka>=2.3.0
+
+# NOTE: torch and transformers are intentionally excluded from the backend.
+# They are only needed in the deep-learning services (data-etl, model predictor).
+# Installing them here pulled in ~3.5 GB of NVIDIA CUDA libraries into every image.

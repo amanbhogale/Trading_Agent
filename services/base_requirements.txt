@@ -1,0 +1,26 @@
+fastapi
+uvicorn[standard]
+httpx
+python-dotenv
+langchain
+langchain-core
+langchain-openai
+langchain-anthropic
+langchain-google-genai
+langgraph
+langgraph-checkpoint-postgres
+psycopg[binary]
+psycopg-pool
+kiteconnect
+pandas
+numpy
+plotly
+tavily-python
+yfinance
+markdown
+requests
+# MongoDB
+pymongo[srv]>=4.6.0
+motor>=3.3.0
+# Kafka
+confluent-kafka>=2.3.0

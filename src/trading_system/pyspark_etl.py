@@ -20,10 +20,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 DB_PARAMS = {
-    'dbname': 'trading_db',
-    'user': 'trading_agent',
-    'password': 'zombie612@',
-    'host': 'localhost'
+    'dbname':   os.getenv('DB_NAME',     'trading_db'),
+    'user':     os.getenv('DB_USER',     'trading_agent'),
+    'password': os.getenv('DB_PASSWORD', 'zombie612@'),
+    'host':     os.getenv('DB_HOST',     'localhost'),
+    'port':     os.getenv('DB_PORT',     '5432'),
 }
 
 def get_active_tickers():

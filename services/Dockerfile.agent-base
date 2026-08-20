@@ -1,0 +1,25 @@
+FROM python:3.10-slim
+
+# common OS-level deps for psycopg2/compiled wheels
+RUN apt-get update && apt-get install -y gcc libpq-dev curl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy base requirements shared by all agent services
+COPY services/base_requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the core trading system library so agents can import from it
+COPY src/ ./src/
+
+# Copy top-level helpers used by tools
+COPY kite_auth.py .
+
+ARG SERVICE_DIR
+COPY services/${SERVICE_DIR}/ ./service/
+
+WORKDIR /app/service
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

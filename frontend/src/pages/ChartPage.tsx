@@ -30,15 +30,13 @@ interface WatchItem { symbol: string; name: string; ltp: number | null; prev: nu
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TIMEFRAMES = [
-  { label:'1m',  kite:'1minute',  days:7    },
-  { label:'5m',  kite:'5minute',  days:14   },
-  { label:'15m', kite:'15minute', days:30   },
-  { label:'30m', kite:'30minute', days:60   },
-  { label:'1H',  kite:'60minute', days:90   },
-  { label:'D',   kite:'day',      days:365  },
-  { label:'W',   kite:'week',     days:1825 },
-  { label:'M',   kite:'month',    days:3650 },
-  { label:'Y',   kite:'month',    days:10950},
+  { label:'1m',  kite:'1minute',  mongo:'1m',  days:7    },
+  { label:'5m',  kite:'5minute',  mongo:'5m',  days:14   },
+  { label:'15m', kite:'15minute', mongo:'15m', days:30   },
+  { label:'1h',  kite:'60minute', mongo:'1h',  days:90   },
+  { label:'1D',  kite:'day',      mongo:'1D',  days:365  },
+  { label:'1W',  kite:'week',     mongo:'1W',  days:1825 },
+  { label:'1M',  kite:'month',    mongo:'1M',  days:3650 },
 ]
 
 const INDICATORS = ['EMA9','EMA21','EMA50','EMA200','Volume','RSI']
@@ -151,6 +149,64 @@ function Watchlist({ items, active, onSelect, mode }: {
   )
 }
 
+// ─── OrderBook Visualizer Component ──────────────────────────────────────────
+function OrderBookVisualizer({ orderbook }: { orderbook: any }) {
+  const bids = orderbook?.bids || []
+  const asks = orderbook?.asks || []
+  
+  const bestBid = bids.length > 0 ? bids[0].price : 0
+  const bestAsk = asks.length > 0 ? asks[0].price : 0
+  const midPrice = (bestBid > 0 && bestAsk > 0) ? ((bestBid + bestAsk) / 2) : 0
+  
+  const maxBidQty = Math.max(...bids.map((b: any) => b.qty), 1)
+  const maxAskQty = Math.max(...asks.map((a: any) => a.qty), 1)
+  const maxQty = Math.max(maxBidQty, maxAskQty)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '0 4px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+        <span style={{ color: C.muted }}>Mid Price:</span>
+        <span style={{ fontWeight: 600, color: C.text }}>
+          {midPrice > 0 ? `₹${midPrice.toFixed(2)}` : 'N/A'}
+        </span>
+      </div>
+      
+      {/* Asks (Sells) - Render reversed so lowest ask is at bottom */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+        {asks.slice().reverse().map((ask: any, i: number) => {
+           const pct = (ask.qty / maxQty) * 100
+           return (
+             <div key={`ask-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, position: 'relative', height: 18, alignItems: 'center' }}>
+               <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: `${pct}%`, background: 'rgba(239,83,80,0.15)', zIndex: 0, borderRadius: 2 }} />
+               <span style={{ color: C.down, zIndex: 1, paddingLeft: 4, fontFamily: 'monospace' }}>{ask.price.toFixed(2)}</span>
+               <span style={{ color: C.text, zIndex: 1, paddingRight: 4, fontFamily: 'monospace' }}>{ask.qty}</span>
+             </div>
+           )
+        })}
+      </div>
+      
+      {/* Spread / Mid separator */}
+      <div style={{ textAlign: 'center', fontSize: 10, color: C.muted, margin: '6px 0', borderTop: `1px dashed ${C.border}`, borderBottom: `1px dashed ${C.border}`, padding: '4px 0', background: 'rgba(255,255,255,0.02)' }}>
+        Spread: { (bestAsk > 0 && bestBid > 0) ? (bestAsk - bestBid).toFixed(2) : 'N/A' }
+      </div>
+      
+      {/* Bids (Buys) - Highest bid at top */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        {bids.map((bid: any, i: number) => {
+           const pct = (bid.qty / maxQty) * 100
+           return (
+             <div key={`bid-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, position: 'relative', height: 18, alignItems: 'center' }}>
+               <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: 'rgba(38,166,154,0.15)', zIndex: 0, borderRadius: 2 }} />
+               <span style={{ color: C.text, zIndex: 1, paddingLeft: 4, fontFamily: 'monospace' }}>{bid.qty}</span>
+               <span style={{ color: C.up, zIndex: 1, paddingRight: 4, fontFamily: 'monospace' }}>{bid.price.toFixed(2)}</span>
+             </div>
+           )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Chart ───────────────────────────────────────────────────────────────
 export default function ChartPage({ mode }: { mode: string }) {
   const mainRef   = useRef<HTMLDivElement>(null)
@@ -162,6 +218,8 @@ export default function ChartPage({ mode }: { mode: string }) {
   const candleSeriesRef = useRef<any>(null)
   // LWC v5: markers are managed via createSeriesMarkers() plugin, not series.setMarkers()
   const markersPluginRef = useRef<ISeriesMarkersPluginApi<any> | null>(null)
+  const stopLossLineRef = useRef<any>(null)
+  const takeProfitLineRef = useRef<any>(null)
 
   const sessionKey = `lwcChartState_${mode}`
 
@@ -230,6 +288,78 @@ export default function ChartPage({ mode }: { mode: string }) {
   const [predictLoading, setPredictLoading] = useState<boolean>(false)
   const [modelOverlayActive, setModelOverlayActive] = useState<boolean>(false)
   const [nextDayPred, setNextDayPred] = useState<any>(null)
+  const [selectedModel, setSelectedModel] = useState<string>('tft')
+  const [modelBacktestResults, setModelBacktestResults] = useState<any | null>(null)
+
+  // ─── Pine Script Backtester States ─────────────────────────────────────────
+  const [pineScript, setPineScript] = useState<string>(`//@version=5
+strategy("EMA Crossover", overlay=true)
+
+fastEMA = ta.ema(close, 9)
+slowEMA = ta.ema(close, 21)
+
+longCondition = ta.crossover(fastEMA, slowEMA)
+shortCondition = ta.crossunder(fastEMA, slowEMA)
+
+if (longCondition)
+    strategy.entry("Long", strategy.long)
+
+if (shortCondition)
+    strategy.close("Long")`)
+  const [pineBacktestLoading, setPineBacktestLoading] = useState<boolean>(false)
+  const [pineResults, setPineResults] = useState<{
+    trades: any[]
+    summary: {
+      total_trades: number
+      net_profit: number
+      net_profit_pct: number
+      win_rate: number
+      max_drawdown: number
+      profit_factor: number
+      avg_trade: number
+      sharpe: number
+      reward_risk_ratio?: number
+    }
+    strategy_type: string
+  } | null>(null)
+  const [pineError, setPineError] = useState<string>('')
+  const [showPineTester, setShowPineTester] = useState<boolean>(false)
+
+  // ─── Order Book States ───────────────────────────────────────────────────
+  const [orderbook, setOrderbook] = useState<{bids:any[], asks:any[], timestamp:string} | null>(null)
+  const [orderbookLoading, setOrderbookLoading] = useState<boolean>(false)
+
+  const fetchOrderbook = useCallback(async (sym: string) => {
+    setOrderbookLoading(true)
+    try {
+      let exch = 'NSE'
+      let cleanSym = sym
+      if (sym.includes(':')) {
+        const parts = sym.split(':')
+        exch = parts[0]
+        cleanSym = parts[1]
+      } else if (sym.endsWith('=X')) {
+        exch = 'forex'
+        cleanSym = sym
+      } else if (sym.endsWith('USDT') || sym.endsWith('USD')) {
+        exch = 'crypto'
+        cleanSym = sym
+      }
+      
+      const res = await api.get(`/orderbook?symbol=${cleanSym}&exchange=${exch}&limit=1`)
+      if (res.data.snapshots && res.data.snapshots.length > 0) {
+        setOrderbook(res.data.snapshots[0])
+      } else {
+        setOrderbook(null)
+      }
+    } catch (e) {
+      console.error("Orderbook fetch failed", e)
+      setOrderbook(null)
+    } finally {
+      setOrderbookLoading(false)
+    }
+  }, [])
+
 
   useEffect(() => {
     sessionStorage.setItem(sessionKey, JSON.stringify({ symbol, tfIdx }))
@@ -277,7 +407,45 @@ export default function ChartPage({ mode }: { mode: string }) {
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchCandles(symbol, TIMEFRAMES[tfIdx]) }, [symbol, tfIdx, fetchCandles])
+  useEffect(() => { 
+    fetchCandles(symbol, TIMEFRAMES[tfIdx]) 
+    fetchOrderbook(symbol)
+  }, [symbol, tfIdx, fetchCandles, fetchOrderbook])
+
+  // ── Auto-poll Orderbook / Live WebSocket ──────────────────────────────────
+  useEffect(() => {
+    let ws: WebSocket | null = null
+    const cleanSym = symbol.includes(':') ? symbol.split(':')[1] : symbol
+
+    if (symbol.endsWith('USDT') || symbol.endsWith('USD')) {
+      // Connect directly to Binance WebSocket for instant live orderbook depth!
+      const binanceSym = cleanSym.toLowerCase().replace('usd', 'usdt')
+      const wsUrl = `wss://stream.binance.com:9443/ws/${binanceSym}@depth20@100ms`
+      console.log(`Connecting to Binance WS: ${wsUrl}`)
+      ws = new WebSocket(wsUrl)
+      
+      ws.onopen = () => console.log(`Binance WS Connected: ${binanceSym}`)
+      ws.onerror = (e) => console.error(`Binance WS Error:`, e)
+      
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data)
+        if (data.bids && data.asks) {
+           const bids = data.bids.map((b:any) => ({ price: parseFloat(b[0]), qty: parseFloat(b[1]) }))
+           const asks = data.asks.map((a:any) => ({ price: parseFloat(a[0]), qty: parseFloat(a[1]) }))
+           setOrderbook({ bids, asks, timestamp: new Date().toISOString() })
+           setOrderbookLoading(false)
+        }
+      }
+      return () => {
+        console.log(`Closing Binance WS for ${binanceSym}`)
+        ws?.close()
+      }
+    } else {
+      // For non-crypto (NSE), fallback to 1.5s DB polling (or backend WS relay)
+      const id = setInterval(() => fetchOrderbook(symbol), 1500)
+      return () => clearInterval(id)
+    }
+  }, [symbol, fetchOrderbook])
 
   // ── Fetch watchlist ─────────────────────────────────────────────────────────
   const fetchWatchlist = useCallback(async () => {
@@ -305,6 +473,80 @@ export default function ChartPage({ mode }: { mode: string }) {
     const id = setInterval(fetchWatchlist, 30_000)
     return () => clearInterval(id)
   }, [fetchWatchlist])
+
+  // ── Real-time chart updates via WebSocket ──────────────────────────────────
+  useEffect(() => {
+    const ws = new WebSocket("ws://localhost:8765")
+
+    ws.onopen = () => {
+      console.log("WebSocket chart feed connected ✅")
+    }
+
+    ws.onmessage = (event) => {
+      try {
+        const tick = JSON.parse(event.data)
+        if (tick.symbol.toUpperCase() !== symbol.toUpperCase()) return
+
+        const price = parseFloat(tick.price)
+        const timestamp = tick.timestamp
+        const tickTime = new Date(timestamp * (timestamp < 1e11 ? 1000 : 1))
+        
+        // Round to start of minute for 1-minute chart timeframe
+        const minuteTime = new Date(
+          tickTime.getFullYear(),
+          tickTime.getMonth(),
+          tickTime.getDate(),
+          tickTime.getHours(),
+          tickTime.getMinutes(),
+          0,
+          0
+        )
+        const minuteEpoch = Math.floor(minuteTime.getTime() / 1000) as UTCTimestamp
+
+        setCandles(prev => {
+          if (!prev.length) return prev
+          const newCandles = [...prev]
+          const last = newCandles[newCandles.length - 1]
+
+          if (last.time === minuteEpoch) {
+            // Update the last candle
+            const updated = {
+              ...last,
+              close: price,
+              high: Math.max(last.high, price),
+              low: Math.min(last.low, price),
+            }
+            newCandles[newCandles.length - 1] = updated
+            setLastC(updated)
+            setPrice(price.toFixed(2))
+            return newCandles
+          } else if (minuteEpoch > last.time) {
+            // Append a new candle
+            const newCandle: Candle = {
+              time: minuteEpoch,
+              open: price,
+              high: price,
+              low: price,
+              close: price,
+              volume: parseFloat(tick.volume || 1),
+            }
+            newCandles.push(newCandle)
+            setLastC(newCandle)
+            setPrice(price.toFixed(2))
+            return newCandles
+          }
+          return prev
+        })
+      } catch (err) {
+        console.error("Error handling tick payload:", err)
+      }
+    }
+
+    return () => {
+      ws.close()
+    }
+  }, [symbol])
+
 
   // ── Build charts whenever candles or indicator flags change ─────────────────
   useEffect(() => {
@@ -450,11 +692,17 @@ export default function ChartPage({ mode }: { mode: string }) {
     setPredictLoading(true)
     try {
       // Ensure we request enough history for the interval (at least tf.days)
-      const res = await api.post('/predict_model', { symbol, interval: tf.kite, days: Math.max(120, tf.days) })
+      const res = await api.post('/predict_model', { 
+        symbol, 
+        interval: tf.kite, 
+        days: Math.max(120, tf.days),
+        model: selectedModel
+      })
       if (res.data.predictions && res.data.predictions.length) {
         const preds = res.data.predictions
         setPredictions(preds)
         setNextDayPred(preds.at(-1))
+        setModelBacktestResults(res.data.backtest)
 
         // LWC v5: use createSeriesMarkers() instead of series.setMarkers()
         if (candleSeriesRef.current && mainChart.current) {
@@ -479,6 +727,41 @@ export default function ChartPage({ mode }: { mode: string }) {
             candleSeriesRef.current,
             markers,
           ) as ISeriesMarkersPluginApi<any>
+
+          // Manage Stop Loss and Take Profit lines
+          if (stopLossLineRef.current) {
+            try { candleSeriesRef.current.removePriceLine(stopLossLineRef.current) } catch {}
+            stopLossLineRef.current = null
+          }
+          if (takeProfitLineRef.current) {
+            try { candleSeriesRef.current.removePriceLine(takeProfitLineRef.current) } catch {}
+            takeProfitLineRef.current = null
+          }
+
+          const latestPred = preds.at(-1)
+          if (latestPred && (latestPred.signal === 'buy' || latestPred.signal === 'sell')) {
+            if (latestPred.stop_loss) {
+              stopLossLineRef.current = candleSeriesRef.current.createPriceLine({
+                price: latestPred.stop_loss,
+                color: C.down,
+                lineWidth: 2,
+                lineStyle: 1, // Dashed
+                axisLabelVisible: true,
+                title: 'Stop Loss (SL)',
+              })
+            }
+            if (latestPred.take_profit) {
+              takeProfitLineRef.current = candleSeriesRef.current.createPriceLine({
+                price: latestPred.take_profit,
+                color: C.up,
+                lineWidth: 2,
+                lineStyle: 1, // Dashed
+                axisLabelVisible: true,
+                title: 'Take Profit (TP)',
+              })
+            }
+          }
+
           setModelOverlayActive(true)
         }
       } else {
@@ -496,8 +779,19 @@ export default function ChartPage({ mode }: { mode: string }) {
       try { markersPluginRef.current.setMarkers([]) } catch {}
       markersPluginRef.current = null
     }
+    if (candleSeriesRef.current) {
+      if (stopLossLineRef.current) {
+        try { candleSeriesRef.current.removePriceLine(stopLossLineRef.current) } catch {}
+        stopLossLineRef.current = null
+      }
+      if (takeProfitLineRef.current) {
+        try { candleSeriesRef.current.removePriceLine(takeProfitLineRef.current) } catch {}
+        takeProfitLineRef.current = null
+      }
+    }
     setModelOverlayActive(false)
     setNextDayPred(null)
+    setModelBacktestResults(null)
   }
 
   // ─── Trade Placement Handler ───────────────────────────────────────────────
@@ -538,6 +832,98 @@ export default function ChartPage({ mode }: { mode: string }) {
       setTradeLoading(false)
     }
   }
+
+  // ─── Pine Script Strategy Tester Handler ────────────────────────────────────
+  const handlePineBacktest = async () => {
+    setPineBacktestLoading(true)
+    setPineError('')
+    setPineResults(null)
+    try {
+      const res = await api.post('/pine_backtest', {
+        script: pineScript,
+        symbol: symbol,
+        interval: TIMEFRAMES[tfIdx].kite,
+        days: TIMEFRAMES[tfIdx].days,
+        initial_capital: 100000,
+      })
+      setPineResults(res.data)
+
+      // Clear take profit/stop loss price lines of the ML prediction model if any
+      if (stopLossLineRef.current && candleSeriesRef.current) {
+        try { candleSeriesRef.current.removePriceLine(stopLossLineRef.current) } catch {}
+        stopLossLineRef.current = null
+      }
+      if (takeProfitLineRef.current && candleSeriesRef.current) {
+        try { candleSeriesRef.current.removePriceLine(takeProfitLineRef.current) } catch {}
+        takeProfitLineRef.current = null
+      }
+      setModelOverlayActive(false)
+
+      // Apply backtest markers to the TradingView chart
+      if (candleSeriesRef.current && res.data.trades && res.data.trades.length) {
+        const markers: any[] = [];
+        res.data.trades.forEach((t: any) => {
+          // Entry Marker
+          markers.push({
+            time: t.entry_time,
+            position: t.type === 'long' ? 'belowBar' : 'aboveBar',
+            color: t.type === 'long' ? C.up : C.down,
+            shape: t.type === 'long' ? 'arrowUp' : 'arrowDown',
+            text: t.type === 'long' ? `Buy ₹${t.entry_price}` : `Sell ${t.entry_price}`,
+          });
+          // Exit Marker
+          markers.push({
+            time: t.exit_time,
+            position: t.type === 'long' ? 'aboveBar' : 'belowBar',
+            color: t.type === 'long' ? C.down : C.up,
+            shape: t.type === 'long' ? 'arrowDown' : 'arrowUp',
+            text: `Exit ₹${t.exit_price}`,
+          });
+        });
+
+        // Sort markers chronologically
+        markers.sort((a: any, b: any) => {
+          return new Date(a.time).getTime() - new Date(b.time).getTime();
+        });
+
+        // Format times (handle timestamps vs date strings)
+        const formattedMarkers = markers.map((m: any) => {
+          let markerTime = m.time;
+          if (typeof markerTime === 'string' && /^\d+$/.test(markerTime)) {
+            markerTime = parseInt(markerTime, 10) as UTCTimestamp;
+          } else if (typeof markerTime === 'string' && markerTime.includes(' ')) {
+            markerTime = markerTime.split(' ')[0];
+          }
+          return {
+            ...m,
+            time: markerTime
+          };
+        });
+
+        // Remove old markers plugin
+        if (markersPluginRef.current) {
+          try { markersPluginRef.current.setMarkers([]) } catch {}
+        }
+
+        // Create new markers plugin for the TV chart
+        markersPluginRef.current = createSeriesMarkers(
+          candleSeriesRef.current,
+          formattedMarkers,
+        ) as ISeriesMarkersPluginApi<any>;
+      } else {
+        // Clear markers if no trades executed
+        if (markersPluginRef.current) {
+          try { markersPluginRef.current.setMarkers([]) } catch {}
+          markersPluginRef.current = null;
+        }
+      }
+    } catch (e: any) {
+      setPineError(e.response?.data?.error || e.friendlyMessage || e.message || 'Backtest error')
+    } finally {
+      setPineBacktestLoading(false)
+    }
+  }
+
 
   return (
     <div style={{ display:'flex', height:'calc(100vh - 130px)', overflow:'hidden' }}>
@@ -680,6 +1066,28 @@ export default function ChartPage({ mode }: { mode: string }) {
         display: 'flex', flexDirection: 'column', overflowY: 'auto'
       }}>
         
+        {/* Order Book Section */}
+        <div style={{ padding: '16px', borderBottom: `1px solid ${C.border}` }}>
+          <h3 style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', margin: '0 0 10px 0', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', justifyContent: 'space-between' }}>
+            <span>📊 L2 Order Book</span>
+            <button onClick={() => fetchOrderbook(symbol)} style={{ background:'transparent', border:'none', cursor:'pointer', color:C.muted }}>🔄</button>
+          </h3>
+          
+          <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px' }}>
+            {orderbookLoading ? (
+              <div style={{ fontSize: 12, color: C.text, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> Loading depth...
+              </div>
+            ) : orderbook ? (
+              <OrderBookVisualizer orderbook={orderbook} />
+            ) : (
+              <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>
+                No order book data available.
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* ML Model Section */}
         <div style={{ padding: '16px', borderBottom: `1px solid ${C.border}` }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, color: '#60a5fa', margin: '0 0 10px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -687,7 +1095,7 @@ export default function ChartPage({ mode }: { mode: string }) {
           </h3>
           
           <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px', marginBottom: '12px' }}>
-            <div style={{ fontSize: 11, color: C.muted, marginBottom: '6px' }}>LSTM Trading Model ({symbol})</div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: '6px' }}>{selectedModel.toUpperCase()} Trading Model ({symbol})</div>
             {predictLoading ? (
               <div style={{ fontSize: 12, color: C.text, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> Computing features & scaling...
@@ -705,23 +1113,111 @@ export default function ChartPage({ mode }: { mode: string }) {
                     {nextDayPred.signal}
                   </span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0' }}>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0' }}>
                   <span style={{ fontSize: 11, color: C.muted }}>Target Price:</span>
                   <span style={{ fontSize: 12, fontWeight: 600, color: '#f59e0b' }}>
                     ₹{nextDayPred.predicted_price.toFixed(2)}
                   </span>
                 </div>
+                {nextDayPred.stop_loss && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0' }}>
+                    <span style={{ fontSize: 11, color: C.muted }}>Stop Loss (SL):</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: C.down }}>
+                      ₹{nextDayPred.stop_loss.toFixed(2)}
+                    </span>
+                  </div>
+                )}
+                {nextDayPred.take_profit && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0' }}>
+                    <span style={{ fontSize: 11, color: C.muted }}>Take Profit (TP):</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: C.up }}>
+                      ₹{nextDayPred.take_profit.toFixed(2)}
+                    </span>
+                  </div>
+                )}
                 <div style={{ fontSize: 10, color: C.muted, display: 'flex', gap: 6, marginTop: '8px' }}>
                   <span>Buy: {(nextDayPred.probs[1]*100).toFixed(0)}%</span>
                   <span>Sell: {(nextDayPred.probs[2]*100).toFixed(0)}%</span>
                   <span>Hold: {(nextDayPred.probs[0]*100).toFixed(0)}%</span>
                 </div>
+
+                {modelBacktestResults && modelBacktestResults.summary && (
+                  <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${C.border}` }}>
+                    <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', marginBottom: '6px', letterSpacing: '0.05em' }}>
+                      Backtest Results
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                      <div>
+                        <div style={{ fontSize: 8, color: C.muted }}>NET PROFIT</div>
+                        <div style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: modelBacktestResults.summary.net_profit >= 0 ? C.up : C.down
+                        }}>
+                          ₹{modelBacktestResults.summary.net_profit.toLocaleString()} ({modelBacktestResults.summary.net_profit_pct}%)
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 8, color: C.muted }}>WIN RATE</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>
+                          {modelBacktestResults.summary.win_rate}%
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 8, color: C.muted }}>TOTAL TRADES</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>
+                          {modelBacktestResults.summary.total_trades}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 8, color: C.muted }}>MAX DRAWDOWN</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: C.down }}>
+                          {modelBacktestResults.summary.max_drawdown}%
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 8, color: C.muted }}>PROFIT FACTOR</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>
+                          {modelBacktestResults.summary.profit_factor}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 8, color: C.muted }}>SHARPE RATIO</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>
+                          {modelBacktestResults.summary.sharpe_ratio}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 8, color: C.muted }}>REWARD:RISK RATIO</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>
+                          {modelBacktestResults.summary.reward_risk_ratio ?? '0.0'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>
                 No active model overlays. Click compute below.
               </div>
             )}
+          </div>
+
+          <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 10, color: C.muted, fontWeight: 600, textTransform: 'uppercase' }}>Model Selector</label>
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              style={{
+                width: '100%', padding: '6px 10px', background: C.bg, color: C.text,
+                border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 11,
+                outline: 'none', cursor: 'pointer'
+              }}
+            >
+              <option value="tft">🔮 Temporal Fusion Transformer (TFT)</option>
+              <option value="lstm">📈 Long Short-Term Memory (LSTM)</option>
+            </select>
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>
@@ -734,7 +1230,7 @@ export default function ChartPage({ mode }: { mode: string }) {
                 cursor: 'pointer', transition: 'opacity 0.12s'
               }}
             >
-              {modelOverlayActive ? '🔄 Recompute Model' : '🔮 Run LSTM Model'}
+              {modelOverlayActive ? '🔄 Recompute Model' : `🔮 Run ${selectedModel.toUpperCase()} Model`}
             </button>
             {modelOverlayActive && (
               <button
@@ -1007,6 +1503,187 @@ export default function ChartPage({ mode }: { mode: string }) {
                 </div>
               )}
             </div>
+          )}
+        </div>
+
+        {/* Pine Script Strategy Tester Section */}
+        <div style={{ padding: '16px', borderTop: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div
+            onClick={() => setShowPineTester(!showPineTester)}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+          >
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#60a5fa', margin: '0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              🌲 Pine Script Strategy Tester
+            </h3>
+            <span style={{ color: C.muted, fontSize: 11 }}>{showPineTester ? '▼' : '▲'}</span>
+          </div>
+          
+          {showPineTester && (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>PINE SCRIPT CODE</label>
+                <textarea
+                  value={pineScript}
+                  onChange={e => setPineScript(e.target.value)}
+                  rows={8}
+                  style={{
+                    width: '100%',
+                    background: C.bg,
+                    color: C.text,
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 6,
+                    padding: '8px',
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                    outline: 'none',
+                    resize: 'vertical',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <button
+                onClick={handlePineBacktest}
+                disabled={pineBacktestLoading}
+                style={{
+                  background: C.blue,
+                  border: 'none',
+                  borderRadius: 6,
+                  color: '#fff',
+                  padding: '8px 12px',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'opacity 0.12s'
+                }}
+              >
+                {pineBacktestLoading ? (
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> Running Backtest...
+                  </span>
+                ) : '🌲 Run Pine Backtest'}
+              </button>
+
+              {pineError && (
+                <div style={{
+                  background: 'rgba(239,83,80,0.08)',
+                  border: `1px solid ${C.down}`,
+                  borderRadius: 6,
+                  padding: '8px',
+                  fontSize: 11,
+                  color: '#f87171'
+                }}>
+                  ⚠️ {pineError}
+                </div>
+              )}
+
+              {pineResults && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px' }}>
+                    <div style={{ fontSize: 11, color: C.muted, marginBottom: '8px' }}>
+                      Results for {symbol} ({pineResults.strategy_type})
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: 9, color: C.muted }}>NET PROFIT</div>
+                        <div style={{
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: pineResults.summary.net_profit >= 0 ? C.up : C.down
+                        }}>
+                          ₹{pineResults.summary.net_profit.toLocaleString()} ({pineResults.summary.net_profit_pct}%)
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 9, color: C.muted }}>WIN RATE</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+                          {pineResults.summary.win_rate}%
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 9, color: C.muted }}>TOTAL TRADES</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+                          {pineResults.summary.total_trades}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 9, color: C.muted }}>MAX DRAWDOWN</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.down }}>
+                          {pineResults.summary.max_drawdown}%
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 9, color: C.muted }}>PROFIT FACTOR</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+                          {pineResults.summary.profit_factor}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 9, color: C.muted }}>SHARPE RATIO</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+                          {pineResults.summary.sharpe}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 9, color: C.muted }}>REWARD:RISK RATIO</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+                          {pineResults.summary.reward_risk_ratio ?? '0.0'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {pineResults.trades.length > 0 ? (
+                    <div>
+                      <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase' }}>
+                        Recent Trades (Last 5)
+                      </div>
+                      <div style={{
+                        background: C.bgCard,
+                        border: `1px solid ${C.border}`,
+                        borderRadius: 8,
+                        overflow: 'hidden'
+                      }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+                          <thead>
+                            <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: `1px solid ${C.border}` }}>
+                              <th style={{ padding: '6px 8px', textAlign: 'left', color: C.muted }}>Time</th>
+                              <th style={{ padding: '6px 8px', textAlign: 'right', color: C.muted }}>Entry/Exit</th>
+                              <th style={{ padding: '6px 8px', textAlign: 'right', color: C.muted }}>P&L</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pineResults.trades.slice(-5).map((t: any, idx: number) => (
+                              <tr key={idx} style={{ borderBottom: idx < 4 ? `1px solid rgba(255,255,255,0.02)` : 'none' }}>
+                                <td style={{ padding: '6px 8px', color: C.text }}>
+                                  {t.exit_time.split(' ')[0]}
+                                </td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right', color: C.text }}>
+                                  ₹{t.entry_price} → ₹{t.exit_price}
+                                </td>
+                                <td style={{
+                                  padding: '6px 8px',
+                                  textAlign: 'right',
+                                  fontWeight: 600,
+                                  color: t.pnl >= 0 ? C.up : C.down
+                                }}>
+                                  {t.pnl >= 0 ? '+' : ''}{t.pnl}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic', textAlign: 'center', padding: '10px' }}>
+                      No trades executed by this strategy.
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </aside>

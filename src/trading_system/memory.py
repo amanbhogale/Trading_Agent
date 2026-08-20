@@ -9,13 +9,28 @@ import psycopg2.extras
 
 logger = logging.getLogger(__name__)
 
-# Configure DB connection (ideally load from env variables in production)
+from dotenv import load_dotenv
+from psycopg2.pool import ThreadedConnectionPool
+from contextlib import contextmanager
+
+load_dotenv()
+
+# Configure DB connection (loaded from env variables)
 DB_CONFIG = {
-    "dbname": "trading_db",
-    "user": "trading_agent",
-    "password": "zombie612@",
-    "host": "localhost"
+    "dbname": os.getenv("DB_NAME", "trading_db"),
+    "user": os.getenv("DB_USER", "trading_agent"),
+    "password": os.getenv("DB_PASSWORD", "zombie612@"),
+    "host": os.getenv("DB_HOST", "localhost"),
+    "port": os.getenv("DB_PORT", "5432")
 }
+
+# Thread-safe database connection pool
+try:
+    db_pool = ThreadedConnectionPool(minconn=1, maxconn=10, **DB_CONFIG)
+    logger.info("Database connection pool initialized successfully ✅")
+except Exception as e:
+    logger.error("Failed to initialize database connection pool: %s", e)
+    raise
 
 def custom_dumps(obj):
     """Serialize object to JSON string with default=str for Timestamp/datetime support."""
@@ -36,8 +51,17 @@ class MemoryManager:
     def __init__(self):
         pass
 
+    @contextmanager
     def _get_conn(self):
-        return psycopg2.connect(**DB_CONFIG)
+        conn = db_pool.getconn()
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            db_pool.putconn(conn)
 
     def _ensure_agent(self, conn, agent_id: str):
         with conn.cursor() as cur:
@@ -169,9 +193,20 @@ class MemoryManager:
                     market_mode = 'forex'
                 else:
                     market_mode = 'equity'
-                cur.execute("INSERT INTO trade_logs (date, data, logged_at, market_mode) VALUES (%s, %s, %s, %s)",
-                            (today, custom_dumps(trade), now, market_mode))
-            conn.commit()
+                
+                # Extract normalized fields
+                trade_type = (trade.get('transaction_type') or trade.get('trade_type') or 
+                              trade.get('action') or trade.get('transaction') or '').upper()
+                quantity = int(trade.get('quantity') or trade.get('qty') or 0)
+                price = float(trade.get('price') or trade.get('average_price') or 0.0)
+                pnl = trade.get('pnl')
+                if pnl is not None:
+                    pnl = float(pnl)
+                
+                cur.execute("""
+                    INSERT INTO trade_logs (date, data, logged_at, market_mode, symbol, trade_type, quantity, price, pnl) 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (today, custom_dumps(trade), now, market_mode, symbol, trade_type, quantity, price, pnl))
 
     def get_trade_log(self, date: Optional[str] = None, market_mode: Optional[str] = None) -> List[Dict]:
         with self._get_conn() as conn:
