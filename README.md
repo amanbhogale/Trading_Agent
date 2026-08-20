@@ -1,73 +1,64 @@
-# Deep Trading Agent
+# Distributed Deep Trading Agent
 
-> A multi-agent AI trading system powered by **LangChain**, **Vite + React (TypeScript)**, **Flask API**, **Zerodha Kite**, and **Tavily Search**. Built around a centralized reusable `LLMService`, orchestrated through an Orchestrator Agent, and featuring deep learning (LSTM & Reinforcement Learning DQN) backtesting capabilities.
+> An enterprise-grade, event-driven, multi-agent AI trading system. Powered by **Microservices**, **Kafka**, **LangChain**, **Vite + React (TypeScript)**, **Flask API**, **Zerodha Kite**, and advanced **Deep Learning (TFT, LSTM, DQN)**. Built around a centralized orchestrator and a robust real-time data engineering pipeline for automated trading and market analysis.
 
 ---
 
 ## 📑 Table of Contents
 
-- [✨ Features](#-features)
+- [✨ Key Features](#-key-features)
 - [🏗 Architecture](#-architecture)
 - [📦 Project Structure](#-project-structure)
 - [🚀 Installation & Setup](#-installation--setup)
 - [🖥 Running the System](#-running-the-system)
-- [🧪 Deep Learning Backtesting](#-deep-learning-backtesting)
+- [🧪 Deep Learning & Backtesting](#-deep-learning--backtesting)
 - [🧠 Persistent Memory](#-persistent-memory)
 - [🔒 Git Guidelines](#-git-guidelines)
 - [⚠️ Disclaimer](#-disclaimer)
 
 ---
 
-## ✨ Features
+## ✨ Key Features
 
 | Capability | Description |
 |---|---|
-| 💻 **React Web App** | Modern React + Vite (TypeScript) frontend dashboard containing comprehensive analysis, live log viewing, interactive charting, configuration management, and portfolio monitoring. |
-| 💬 **Conversational Agent** | Free-form chat routing to specialized sub-agents via a central orchestrator. |
-| 📊 **Technical Analysis** | Built-in technical indicators (RSI, MACD, Bollinger Bands, EMA 9/21/50) and interactive candlestick charting using TradingView lightweight-charts. |
-| 🧪 **Algorithmic Backtesting** | Backtesting engine for SMA crossover, RSI mean reversion, and MACD trend strategies. |
-| 🤖 **Deep Learning** | Advanced LSTM predictors and Deep Q-Network (DQN) reinforcement learning agents for market trading decision-making. |
-| 💼 **Live Portfolio** | Real-time monitoring of holdings, positions, orders, and P&L via Zerodha Kite API. |
-| ⚡ **Order Execution** | Automated order placement with human-in-the-loop validation and approvals. |
-| 🔍 **Web Search** | Tavily-powered real-time internet search for news aggregation, sentiment analysis, and general research. |
-| 🎛️ **Multi-Provider LLM** | Support for OpenRouter, OpenAI, Anthropic, and Google Gemini with quick-select chips. |
+| 🏛️ **Microservices Architecture** | Highly scalable, decoupled services (Risk, Execution, Strategy, Analysis) communicating via **Kafka** event streams. |
+| 🐳 **Containerized Deployment** | Fully Dockerized stack managed via `docker-compose`, ensuring consistent environments from development to production. |
+| 💬 **Conversational AI Framework** | Free-form chat routing to specialized sub-agents via a central orchestrator and a new **Shepherd Layer** for supervision. |
+| 🤖 **Advanced Deep Learning** | Cutting-edge **Temporal Fusion Transformers (TFT)**, LSTM sequence predictors, and Double Deep Q-Network (DDQN) reinforcement learning agents. |
+| ⚡ **Robust Data Engineering** | High-throughput data pipelines leveraging **MongoDB**, **PySpark**, and live **Orderbook Collectors** for historical replay and real-time streaming. |
+| 💻 **React Web Dashboard** | Modern Vite + TypeScript frontend for comprehensive analysis, interactive charting, live portfolio monitoring, and backtest results. |
+| 💼 **Live Portfolio & Execution** | Real-time monitoring of holdings, positions, and automated order placement via **Zerodha Kite** and **Binance** APIs. |
+| 🔍 **Web Search & Sentiment** | Real-time internet search and live news sentiment classification for fundamental analysis and market context. |
+| 🎛️ **Multi-Provider LLM** | Seamlessly swap between Google Gemini, OpenAI, Anthropic, and local models with a unified `LLMService`. |
 
 ---
 
 ## 🏗 Architecture
 
+The system has evolved from a monolithic Flask app into a distributed, event-driven architecture, enabling massive scalability for high-frequency data and concurrent agent tasks.
+
 ```text
 ┌─────────────────────── React Frontend (Vite) ────────────────────────┐
 │ ⚙️ Config · 💬 Chat · 📊 Analysis · 🧪 Backtest · 💼 Portfolio · Logs │
 └──────────────────────────────────┬───────────────────────────────────┘
-                                   │ (HTTP / JSON API)
+                                   │ (HTTP / WebSockets)
                                    ▼
-┌───────────────────────── Flask Backend API ──────────────────────────┐
-│   Serving API endpoints, routing to main agent, and managing logs   │
+┌───────────────────────── API Gateway / Flask ────────────────────────┐
+│   Serving REST endpoints, managing WebSockets, & Shepherd Routing    │
 └──────────────────────────────────┬───────────────────────────────────┘
-                                   │
+                                   │ (Kafka Event Stream)
                                    ▼
-┌──────────────────── OrchestratorAgent (main_agent.py) ──────────────┐
-│  • Intent classification & Routing                                   │
-│  • Task synthesis & Sub-agent delegation                             │
-└──────────────────────────────────┬───────────────────────────────────┘
-                                   │
-         ┌─────────────────────────┼─────────────────────────┐
-         ▼                         ▼                         ▼
-   MarketDataAgent           AnalysisAgent             StrategyAgent
-   VisualizationAgent        RiskAgent                 ExecutionAgent
-         │                         │                         │
-         └─────────────────────────┼─────────────────────────┘
-                                   ▼
-                           ┌───────────────┐
-                           │   tools.py    │  Kite · Indicators · Charts
-                           │   memory.py   │  File persistence
-                           └───────────────┘
-                                   ▲
-                                   │
-                     ┌─────────────┴─────────────┐
-                     │       llm_service.py      │ (Single shared LLM Config)
-                     └───────────────────────────┘
+┌───────────────────────── Microservices Layer ────────────────────────┐
+│  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌─────────┐ │
+│  │ Orchestrator  │ │ Market Data   │ │ Strategy/Risk │ │ Exec.   │ │
+│  │    Agent      │ │ (Mongo/Kafka) │ │ Agents (LLM)  │ │ Agent   │ │
+│  └──────┬────────┘ └──────┬────────┘ └──────┬────────┘ └────┬────┘ │
+└─────────┼─────────────────┼─────────────────┼───────────────┼──────┘
+          ▼                 ▼                 ▼               ▼
+┌─────────────────── External Integrations & Data ───────────────────┐
+│ Kite/Binance APIs · Tavily Search · MongoDB · Redis/File Memory    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -76,80 +67,59 @@
 
 ```text
 Trading_Agent/
-├── flask_app.py                # Flask API application (main backend entry)
-├── dashboard.py                # Gradio UI (legacy backend entry)
-├── kite_auth.py                # Kite authentication helper script
-├── init_db.py                  # Database initialization script
-├── requirements.txt            # Python dependencies
-├── README.md                   # This documentation file
+├── docker-compose.yml          # Container orchestration for the entire stack
+├── flask_app.py                # Main backend API gateway & WebSocket server
+├── frontend/                   # React + TypeScript + Vite Frontend App
 │
-├── frontend/                   # React + TypeScript + Vite Frontend Web App
-│   ├── src/
-│   │   ├── components/         # Reusable UI components (TickerBar, TickerSearch, etc.)
-│   │   ├── pages/              # Routing pages (Analysis, Backtest, Chat, Portfolio, Logs, etc.)
-│   │   ├── App.tsx             # Main App layout & routing definition
-│   │   ├── api.ts              # Centralized API service using Axios
-│   │   └── index.css           # Global custom CSS styles (Aesthetic design system)
-│   ├── package.json            # npm package definition
-│   └── vite.config.ts          # Vite configuration
+├── services/                   # Dedicated Microservices
+│   ├── orchestrator/           # Central task delegation
+│   ├── market-data/            # Kafka producers for Binance & Kite
+│   ├── data-etl/ & mongo-etl/  # High-throughput data pipelines
+│   ├── strategy/ & risk/       # Specialized agent execution
+│   └── execution/              # Order routing and execution validation
 │
-├── src/trading_system/         # Core Multi-agent Framework
-│   ├── llm_service.py          # Unified LLM Service (Google Gemini, OpenAI, Anthropic, etc.)
-│   ├── main_agent.py           # Orchestrator Agent logic
-│   ├── sub_agents.py           # Specialized sub-agent declarations
-│   ├── tools.py                # @tool definitions for data, indicators, execution, and search
-│   ├── strategies.py           # Algorithmic strategy logic
-│   ├── api_manager.py          # API connection integrations
-│   ├── model_predictor.py      # Predictor module integrations
-│   ├── news_classifier.py      # Live news sentiment classifier
-│   └── memory.py               # File-system persistent memory
+├── src/trading_system/         # Core Trading Framework
+│   ├── main_agent.py           # Orchestrator logic
+│   ├── shepherd_layer.py       # Agent supervision and guardrails
+│   ├── api_manager.py          # Exchange integrations (Kite, Binance)
+│   ├── model_predictor.py      # TFT & LSTM inference integrations
+│   ├── orderbook_collector.py  # Live Level-2 data streaming
+│   ├── mongo_schema.py         # MongoDB database schemas
+│   └── historical_replayer.py  # Replay engine for agent backtesting
 │
-├── deep_learning_backtest/     # LSTM & Reinforcement Learning (DQN) pipeline
-│   ├── configs/                # Configuration files for training and pipelines
-│   ├── 01_environment_setup.ipynb
-│   ├── 02_data_pipeline.ipynb
-│   ├── 03_lstm_model.ipynb
-│   ├── 04_dqn_agent.ipynb
-│   ├── 05_backtest_engine.ipynb
-│   ├── 06_results_dashboard.ipynb
-│   └── helper scripts          # build_colab.py, combine_notebooks.py, update_agent.py, etc.
+├── deep_learning_backtest/     # Advanced ML & Reinforcement Learning
+│   ├── 07_transformer_model.ipynb # TFT architecture exploration
+│   ├── tft_model.py            # Temporal Fusion Transformer implementation
+│   ├── train_tft_ddqn.py       # Training pipeline for TFT-DDQN agents
+│   └── ...                     # Standard LSTM & DQN pipelines
 │
-├── static/ & templates/        # Legacy Flask HTML static folders
-└── data/                       # Local data directory (Auto-created, ignored in Git)
-    ├── memory/                 # JSON file-system conversation memory
-    ├── strategies/             # Saved backtest output results
-    ├── visualizations/         # Exported HTML charts
-    └── trade_logs/             # JSON-based daily trade audit logs
+└── data/                       # Local data directory (Memory, strategies, logs)
 ```
 
 ---
 
 ## 🚀 Installation & Setup
 
-### 1. Python Backend Setup
-Create a virtual environment and install the required Python packages:
+### Option 1: Docker (Recommended)
+The easiest way to run the entire distributed system, including databases and message brokers, is via Docker Compose.
 
 ```bash
-# Create virtual environment
+# Build and start all services in detached mode
+docker-compose up -d --build
+```
+*This will spin up the Frontend, Flask API, Kafka, Zookeeper, MongoDB, and all Agent Microservices.*
+
+### Option 2: Manual Local Setup (Development)
+
+**1. Python Backend Setup**
+```bash
 python -m venv venv
-
-# Activate virtual environment
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install --upgrade pip
 pip install -r requirements.txt
+pip install -r services/base_requirements.txt
 ```
 
-Verify your Python backend components are correctly installed:
-```bash
-python -c "from src.trading_system.llm_service import LLMService; print('LLMService ✅')"
-python -c "import src.trading_system.tools as t; print('Tools ✅')"
-```
-
-### 2. React Frontend Setup
-Install the npm dependencies in the `frontend` directory:
-
+**2. React Frontend Setup**
 ```bash
 cd frontend
 npm install
@@ -158,53 +128,51 @@ cd ..
 
 ---
 
-## 🖥 Running the System
+## 🖥 Running the System (Manual Mode)
 
-You will need two terminals running concurrently to launch the full system locally.
+If not using Docker, you will need to start infrastructure services (MongoDB, Kafka) manually, followed by the app layers:
 
 ### Terminal 1: Backend API
 ```bash
 source venv/bin/activate
 python flask_app.py
 ```
-This launches the Flask server at `http://127.0.0.1:5000/`.
 
 ### Terminal 2: React Frontend
 ```bash
 cd frontend
 npm run dev
 ```
-This runs the Vite dev server, typically at `http://localhost:5173/`. Open this URL in your web browser to access the complete application dashboard.
 
-*(Note: The old Gradio layout can still be run via `python dashboard.py`)*
-
----
-
-## 🧪 Deep Learning Backtesting
-
-The `deep_learning_backtest/` folder contains Jupyter notebooks detailing the steps to set up, extract datasets, train predictive models, and evaluate performance:
-- **01-02**: Environment Setup & Data Pipeline (data ingestion and engineering features)
-- **03**: LSTM Model (time-series sequence training for direction classification)
-- **04-05**: DQN Agent & Backtesting Engine (reinforcement learning environment simulation)
-- **06**: Results Dashboard (visualizing metrics and trade scorecard outputs)
+### Terminal 3+: Microservices
+You can individually run the required microservices from the `services/` directory depending on the pipeline you are testing (e.g., `python services/market-data/main.py`).
 
 ---
 
-## 🧠 Persistent Memory
+## 🧪 Deep Learning & Backtesting
 
-The orchestrator and specialized sub-agents retain state using a file-system JSON database stored under `data/memory/`. This persists conversations, strategy logs, risk metrics, and order history across server restarts.
+The `deep_learning_backtest/` directory contains our state-of-the-art modeling pipeline:
+- **Temporal Fusion Transformers (TFT)**: Advanced multi-horizon forecasting implemented in `tft_model.py` and trained via `train_transformer.py`.
+- **Double Deep Q-Networks (DDQN)**: Reinforcement learning agents integrating TFT features (`train_tft_ddqn.py`) for superior market navigation.
+- **Historical Replayer**: The `historical_replayer.py` engine simulates realistic market environments to validate agent logic over past data.
+
+---
+
+## 🧠 Persistent Memory & Data
+
+State retention has been upgraded to support both local file-system JSON stores (`data/memory/`) and robust document storage via **MongoDB**. This ensures that conversational context, strategy backtests, and high-frequency orderbook snapshots are securely persisted across sessions.
 
 ---
 
 ## 🔒 Git Guidelines
 
-To maintain repository cleanliness and prevent uploading large binaries or private keys, the following file types are configured to remain **locally on your machine** (and are excluded in [`.gitignore`](.gitignore)):
-- All `test_*.py` unit test scripts (e.g. `test_kite.py`, `test_edge_cases.py`, etc.) and `pytest.ini`
-- Python bytecode files (`__pycache__/`, `*.pyc`)
-- Local datasets and processed caches (`data/`, `deep_learning_backtest/data/`)
-- Trained PyTorch models (`deep_learning_backtest/models/`)
-- Training performance reports, trade outputs, and EDA charts (`deep_learning_backtest/results/`, `deep_learning_backtest/eda_results/`, `output/`)
-- Draft & exploratory notebooks (`backtested_dat.ipynb`, `fundemental_analysis.ipynb`, etc.)
+To maintain repository cleanliness, the following are excluded from version control:
+- Environment variable files (`.env`, `atlas-credentials.env`)
+- Local datasets, processed caches, and `__pycache__`/`venv` directories.
+- Large PyTorch model weights (`*.pt`), output logs (`*.log`), and Jupyter checkpoints.
+- Infrastructure data directories (`kafka/`).
+
+*See [`.gitignore`](.gitignore) for the comprehensive list.*
 
 ---
 
