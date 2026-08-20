@@ -1617,7 +1617,7 @@ def delta_request(method, path, params=None, json_data=None, api_key=None, api_s
     import time
     
     url = f"https://api.delta.exchange{path}"
-    timestamp = str(int(time.time() * 1000))
+    timestamp = str(int(time.time()))
     query_string = ""
     if params:
         from urllib.parse import urlencode
@@ -1927,6 +1927,42 @@ def api_place_order():
 
 
 # --- Model Prediction Endpoint ---
+@app.route('/api/orderbook', methods=['GET'])
+def api_orderbook():
+    """Fetch live L2 orderbook snapshot directly from Kite API (External API)."""
+    try:
+        from src.trading_system.tools import _kite_connect
+        symbol = request.args.get('symbol', '').strip().upper()
+        if not symbol:
+            return jsonify({"error": "Symbol required"}), 400
+            
+        kite = _kite_connect()
+        if not kite:
+            return jsonify({"error": "Kite connection not configured"}), 500
+            
+        # Ensure symbol has exchange prefix for Kite
+        kite_sym = symbol if ':' in symbol else f"NSE:{symbol}"
+        
+        quotes = kite.quote([kite_sym])
+        if kite_sym not in quotes:
+            return jsonify({"error": "No data returned from Kite API."}), 404
+            
+        q = quotes[kite_sym]
+        depth = q.get('depth', {})
+        
+        bids = [{"price": d['price'], "qty": d['quantity'], "orders": d['orders']} for d in depth.get('buy', [])]
+        asks = [{"price": d['price'], "qty": d['quantity'], "orders": d['orders']} for d in depth.get('sell', [])]
+        
+        return jsonify({
+            "bids": bids,
+            "asks": asks,
+            "ltp": q.get('last_price', 0),
+            "timestamp": q.get('timestamp', '')
+        })
+    except Exception as e:
+        logger.exception("Failed to fetch live orderbook from external API")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/predict_model', methods=['POST'])
 def api_predict_model():
     try:
@@ -1992,6 +2028,254 @@ def api_predict_model():
     except Exception as e:
         logger.exception("Model prediction endpoint failed")
         return jsonify({"error": str(e)}), 500
+# ==========================================
+# OPTIONS DESK API ROUTES
+# ==========================================
+
+from src.options_engine import BlackScholesPricer, GarmanKohlhagenPricer, Black76Pricer, GreeksCalculator, MonteCarloSimulator
+
+@app.route('/options')
+def options_desk():
+    return render_template('options.html')
+
+@app.route('/api/options/chain', methods=['POST'])
+def api_options_chain():
+    try:
+        data = request.json or {}
+        symbol = data.get('symbol', 'NSE:NIFTY 50')
+        asset_class = data.get('asset_class', 'equity') # equity, forex, commodity
+        
+        import numpy as np
+        import datetime
+        import pandas as pd
+        spot_price = 25000 if asset_class == 'equity' else 1.10
+        volatility = 0.15 # 15% IV
+        r_d = 0.05 # 5% Risk Free Rate
+        r_f = 0.02 # For Forex
+        time_to_expiry = 30 / 365 # 30 days
+        chain = []
+
+        try:
+            # 1. Try Yahoo Finance First (for options data) 
+            # We'll use yfinance to get the chain and Kite to augment if possible
+            import yfinance as yf
+            yf_symbol = symbol
+            if 'NIFTY' in symbol:
+                yf_symbol = '^NSEI' if 'BANK' not in symbol else '^NSEBANK'
+                
+            ticker = yf.Ticker(yf_symbol)
+            fast_info = ticker.fast_info
+            
+            # strictly use YF for spot price
+            spot_price = fast_info.get('lastPrice', spot_price)
+            expdates = ticker.options
+            if expdates:
+                exp_date_str = expdates[0]
+                exp_date = datetime.datetime.strptime(exp_date_str, '%Y-%m-%d')
+                time_to_expiry = max((exp_date - datetime.datetime.now()).days / 365.0, 1/365.0)
+                
+                opt = ticker.option_chain(exp_date_str)
+                calls = opt.calls
+                puts = opt.puts
+                
+                atm_idx = (calls['strike'] - spot_price).abs().argmin()
+                start_idx = max(0, atm_idx - 5)
+                end_idx = min(len(calls), atm_idx + 6)
+                calls_near = calls.iloc[start_idx:end_idx]
+                
+                for _, crow in calls_near.iterrows():
+                    strike = crow['strike']
+                    c_price = crow['lastPrice']
+                    c_iv = crow['impliedVolatility']
+                    
+                    prow = puts[puts['strike'] == strike]
+                    p_price = prow['lastPrice'].values[0] if len(prow) > 0 else 0
+                    
+                    cgreeks = GreeksCalculator.calculate_greeks(spot_price, strike, time_to_expiry, r_d, c_iv if c_iv > 0.01 else volatility, 'call')
+                    
+                    chain.append({
+                        "strike": round(strike, 2),
+                        "call_price": round(c_price, 2),
+                        "put_price": round(p_price, 2),
+                        "delta": round(cgreeks['delta'], 3),
+                        "gamma": round(cgreeks['gamma'], 4),
+                        "theta": round(cgreeks['theta'], 3),
+                        "vega": round(cgreeks['vega'], 3)
+                    })
+            else:
+                raise ValueError("No options dates found on YF")
+
+        except Exception as e:
+            logger.warning(f"Live Options API failed ({e}), generating mock data")
+            
+            def get_strike_step(sp, ac):
+                if ac == 'forex':
+                    return 0.005 if sp < 2.0 else (0.5 if sp < 200 else 1.0)
+                if sp > 20000: return 100.0
+                elif sp > 5000: return 50.0
+                elif sp > 1000: return 20.0
+                elif sp > 500: return 10.0
+                elif sp > 100: return 5.0
+                return 1.0
+                
+            step = get_strike_step(spot_price, asset_class)
+            atm = round(spot_price / step) * step
+            strikes = [atm + (i * step) for i in range(-5, 6)]
+            
+            for K in strikes:
+                if asset_class == 'forex':
+                    c_price = GarmanKohlhagenPricer.price(spot_price, K, time_to_expiry, r_d, r_f, volatility, 'call')
+                    p_price = GarmanKohlhagenPricer.price(spot_price, K, time_to_expiry, r_d, r_f, volatility, 'put')
+                    cgreeks = GreeksCalculator.calculate_greeks(spot_price, K, time_to_expiry, r_d, volatility, 'call', q=r_f)
+                elif asset_class == 'commodity':
+                    c_price = Black76Pricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'call')
+                    p_price = Black76Pricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'put')
+                    cgreeks = GreeksCalculator.calculate_greeks(spot_price, K, time_to_expiry, r_d, volatility, 'call')
+                else: # equity
+                    c_price = BlackScholesPricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'call')
+                    p_price = BlackScholesPricer.price(spot_price, K, time_to_expiry, r_d, volatility, 'put')
+                    cgreeks = GreeksCalculator.calculate_greeks(spot_price, K, time_to_expiry, r_d, volatility, 'call')
+                    
+                chain.append({
+                    "strike": round(K, 2),
+                    "call_price": round(c_price, 2),
+                    "put_price": round(p_price, 2),
+                    "delta": round(cgreeks['delta'], 3),
+                    "gamma": round(cgreeks['gamma'], 4),
+                    "theta": round(cgreeks['theta'], 3),
+                    "vega": round(cgreeks['vega'], 3)
+                })
+                
+        return jsonify({"symbol": symbol, "spot": round(spot_price, 2), "chain": chain})
+    except Exception as e:
+        logger.exception("Options chain failed")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/options/risk', methods=['POST'])
+def api_options_risk():
+    try:
+        import datetime
+        data = request.json or {}
+        mu = data.get('mu', 0.1) # 10% expected return
+        sigma = data.get('sigma', 0.2) # 20% volatility
+        
+        import psycopg2
+        from src.trading_system.memory import DB_CONFIG
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor()
+        cur.execute("SELECT symbol, option_type, strike, expiry, quantity FROM hedging_positions")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        if not rows:
+            return jsonify({
+                "VaR_99": 0.0, "CVaR_99": 0.0, "simulated_worst_case": 0.0, 
+                "current_portfolio_value": 0.0, "plot_paths": []
+            })
+            
+        positions = []
+        for r in rows:
+            positions.append({
+                'symbol': r[0], 'type': r[1], 'strike': float(r[2]), 
+                'tte': max((r[3] - datetime.date.today()).days / 365.0, 1e-5) if r[3] else (30/365.0),
+                'qty': r[4]
+            })
+            
+        symbol = positions[0]['symbol'].replace('-FUT', '')
+        
+        from src.trading_system.hedging_engine import hedger
+        spot_price = hedger._get_spot_price(symbol)
+        
+        # Simulate 30 days forward for VaR
+        sim_days = 30
+        paths = MonteCarloSimulator.simulate_paths(spot_price, mu, sigma, sim_days/365.0, sim_days, 5000)
+        final_values = paths[-1, :]
+        
+        var_metrics = MonteCarloSimulator.calculate_options_var(
+            current_spot=spot_price, 
+            simulated_final_values=final_values, 
+            positions=positions, 
+            horizon_days=sim_days
+        )
+        
+        plot_paths = paths.T[:50, :].tolist()
+        
+        return jsonify({
+            "VaR_99": round(var_metrics['VaR'], 2),
+            "CVaR_99": round(var_metrics['CVaR'], 2),
+            "simulated_worst_case": round(var_metrics['simulated_worst_case'], 2),
+            "current_portfolio_value": round(var_metrics['current_portfolio_value'], 2),
+            "plot_paths": plot_paths
+        })
+    except Exception as e:
+        logger.exception("Options risk failed")
+        return jsonify({"error": str(e)}), 500
+@app.route('/api/options/portfolio', methods=['GET', 'POST', 'DELETE'])
+def api_options_portfolio():
+    try:
+        import psycopg2
+        from trading_system.memory import DB_CONFIG
+        conn = psycopg2.connect(**DB_CONFIG)
+        conn.autocommit = True
+        cur = conn.cursor()
+        
+        if request.method == 'GET':
+            cur.execute("SELECT id, symbol, option_type, strike, expiry, quantity FROM hedging_positions ORDER BY added_at DESC")
+            rows = cur.fetchall()
+            positions = [{"id": r[0], "symbol": r[1], "option_type": r[2], "strike": float(r[3]), "expiry": str(r[4]) if r[4] else None, "quantity": r[5]} for r in rows]
+            return jsonify(positions)
+            
+        elif request.method == 'POST':
+            data = request.json or {}
+            cur.execute("""
+                INSERT INTO hedging_positions (symbol, option_type, strike, expiry, quantity)
+                VALUES (%s, %s, %s, %s, %s) RETURNING id
+            """, (data['symbol'], data['option_type'], data['strike'], data.get('expiry'), data['quantity']))
+            new_id = cur.fetchone()[0]
+            return jsonify({"success": True, "id": new_id})
+            
+        elif request.method == 'DELETE':
+            data = request.json or {}
+            cur.execute("DELETE FROM hedging_positions WHERE id = %s", (data['id'],))
+            return jsonify({"success": True})
+            
+    except Exception as e:
+        logger.exception("Options portfolio API failed")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if 'cur' in locals(): cur.close()
+        if 'conn' in locals(): conn.close()
+
+@app.route('/api/options/hedge_status', methods=['GET', 'POST'])
+def api_options_hedge_status():
+    try:
+        from src.trading_system.hedging_engine import hedger
+        if request.method == 'POST':
+            data = request.json or {}
+            active = data.get('active', False)
+            hedger.set_active(active)
+            return jsonify({"success": True, "is_active": hedger.is_active})
+            
+        import psycopg2
+        from trading_system.memory import DB_CONFIG
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor()
+        cur.execute("SELECT symbol, trade_type, quantity, price, executed_at FROM hedge_trades ORDER BY executed_at DESC LIMIT 10")
+        rows = cur.fetchall()
+        trades = [{"symbol": r[0], "trade_type": r[1], "quantity": r[2], "price": float(r[3]), "executed_at": r[4].isoformat()} for r in rows]
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            "is_active": getattr(hedger, 'is_active', False),
+            "net_delta": getattr(hedger, 'last_net_delta', 0.0),
+            "recent_trades": trades
+        })
+    except Exception as e:
+        logger.exception("Hedge status API failed")
+        return jsonify({"error": str(e)}), 500
+
 
 
 def run_db_migrations():
@@ -2050,6 +2334,12 @@ def init_yahoo_websocket_tickers():
 init_yahoo_websocket_tickers()
 
 if __name__ == '__main__':
+    try:
+        from src.trading_system.hedging_engine import hedger
+        hedger.start()
+    except Exception as e:
+        logger.error(f"Failed to start Hedging Engine: {e}")
+
     # Run the Flask app
     app.run(debug=True, host='0.0.0.0', port=5000)
 

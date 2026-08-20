@@ -1,0 +1,52 @@
+ cd /home/zombie/Documents/Trading_Agent
+
+    # Build and start all services
+    docker compose up --build
+
+    # Or run in background (detached)
+    docker compose up --build -d
+
+  This spins up:
+
+   Service                    │ Container		 │ Exposed
+  ────────────────────────────┼───────────────────────────┼───────────────────────────
+   PostgreSQL                 │ trading_db		 │ Internal only
+   Market Data Agent          │ trading_market_data       │ Internal :8000
+   Analysis Agent             │ trading_analysis          │ Internal :8000
+   Strategy Agent             │ trading_strategy          │ Internal :8000
+   Visualization Agent        │ trading_visualization     │ Internal :8000
+   Risk Agent                 │ trading_risk		 │ Internal :8000
+   Execution Agent            │ trading_execution         │ Internal :8000
+   Orchestrator               │ trading_orchestrator      │ Internal :8000
+   Data ETL (PySpark)         │ trading_data_etl          │ localhost:8007
+   Flask API Gateway          │ trading_backend           │ localhost:5000
+   React Frontend             │ trading_frontend          │ localhost:3000
+
+  Open http://localhost:3000 in your browser.
+  ──────
+  ## Useful Commands
+
+    # View logs for all services
+    docker compose logs -f
+
+    # View logs for a specific service
+    docker compose logs -f backend
+    docker compose logs -f orchestrator
+
+    # Stop everything
+    docker compose down
+
+    # Stop and wipe the database volume
+    docker compose down -v
+
+    # Rebuild a single service
+    docker compose up --build backend
+  ──────
+  ## ⚠️ Before You Run
+
+  Make sure your .env file has all the required API keys filled in — especially
+  OPENROUTER_API_KEY, GEMINI_API_KEY, KITE_API_KEY, and TAVILY_API_KEY. The compose
+  file reads from it automatically.
+
+  Want me to check if your .env has everything set, or look at any of the individual
+  service Dockerfiles?

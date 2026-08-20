@@ -8,6 +8,7 @@ import PortfolioPage from './pages/PortfolioPage'
 import LogsPage from './pages/LogsPage'
 import ChartPage from './pages/ChartPage'
 import NewsPage from './pages/NewsPage'
+import OptionsPage from './pages/OptionsPage'
 import TickerBar from './components/TickerBar'
 
 const NAV_ITEMS = [
@@ -18,6 +19,7 @@ const NAV_ITEMS = [
   { path: '/backtest',  icon: '🧪',  label: 'Backtest'       },
   { path: '/portfolio', icon: '💼',  label: 'Portfolio'      },
   { path: '/news',      icon: '📰',  label: 'News Feed'      },
+  { path: '/options',   icon: '📈',  label: 'Options Desk'   },
   { path: '/logs',      icon: '🖥️',  label: 'Gateway Logs'  },
 ]
 
@@ -66,6 +68,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/backtest':  'Strategy Backtest',
   '/portfolio': 'Live Portfolio',
   '/news':      'Market News Feed',
+  '/options':   'Options & Derivatives Desk',
   '/logs':      'Gateway Logs',
 }
 
@@ -161,6 +164,7 @@ export default function App() {
             <Route path="/backtest"  element={<BacktestPage key={mode} mode={mode} />} />
             <Route path="/portfolio" element={<PortfolioPage key={mode} mode={mode} />} />
             <Route path="/news"      element={<NewsPage key={mode} mode={mode} />} />
+            <Route path="/options"   element={<OptionsPage key={mode} mode={mode} />} />
             <Route path="/logs"      element={<LogsPage />} />
           </Routes>
         </div>

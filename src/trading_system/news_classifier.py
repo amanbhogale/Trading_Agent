@@ -1,7 +1,6 @@
 # news_classifier.py
 import logging
 import threading
-from transformers import pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -14,13 +13,18 @@ class NewsClassifier:
         """Loads the Hugging Face zero-shot model lazily."""
         if self.classifier is None:
             try:
+                from transformers import pipeline  # lazy import — optional dep
                 logger.info("Lazily loading Hugging Face zero-shot classification pipeline...")
                 # Load the popular, highly rated zero-shot classification model from Hugging Face
                 self.classifier = pipeline("zero-shot-classification", model="typeform/distilbert-base-uncased-mnli")
                 logger.info("Hugging Face zero-shot classification model loaded successfully.")
+            except ImportError:
+                logger.warning("transformers not installed — NewsClassifier will use fallback mode.")
+                self.classifier = None
             except Exception as e:
                 logger.error(f"Failed to load Hugging Face zero-shot model: {e}")
                 self.classifier = None
+
 
     def predict(self, title: str, description: str, threshold: float = 0.5) -> str:
         res = self.predict_with_confidence(title, description, threshold)
